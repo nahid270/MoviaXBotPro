@@ -12,7 +12,7 @@ class script(object):
     ABOUT_TXT = """<b>╭───────────⍟
 ├🤖 ᴍʏ ɴᴀᴍᴇ : <a href=https://t.me/{}>{}</a>
 ├👑 ᴏᴡɴᴇʀ : <a href={}>ᴏᴡɴᴇʀ</a>
-├👨‍💻 ᴅᴇᴠᴇʟᴏᴘᴇʀ : <a href=https://t.me/SilentXBotz>ꜱɪʟᴇɴᴛxʙᴏᴛᴢ </a>
+├👨‍💻 ᴅᴇᴠᴇʟᴏᴘᴇʀ : <a href=https://t.me/TGLinkBase>TGLinkBase </a>
 ├📕 ʟɪʙʀᴀʀʏ : <a href=https://github.com/pyrogram>ᴘʏʀᴏɢʀᴀᴍ</a>
 ├✏️ ʟᴀɴɢᴜᴀɢᴇ : <a href=https://www.python.org>ᴘʏᴛʜᴏɴ 3</a>
 ├💾 ᴅᴀᴛᴀʙᴀꜱᴇ : <a href=https://cloud.mongodb.com>ᴍᴏɴɢᴏ ᴅʙ</a>
@@ -73,7 +73,7 @@ class script(object):
 
 1️⃣ ʏᴏᴜ ᴍᴜꜱᴛ ʜᴀᴠᴇ ᴀ ɢʀᴏᴜᴘ ᴡɪᴛʜ ᴀᴛ ʟᴇᴀꜱᴛ 100 ᴍᴇᴍʙᴇʀꜱ.
 2️⃣ ᴀᴅᴅ <a href=https://t.me/{}>ᴛʜɪꜱ ʙᴏᴛ</a> ᴀꜱ ᴀɴ ᴀᴅᴍɪɴ ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ.
-3️⃣ ᴄʀᴇᴀᴛᴇ ᴀɴ ᴀᴄᴄᴏᴜɴᴛ ᴏɴ ᴀ ꜱʜᴏʀᴛᴇɴᴇʀ (ᴇ.ɢ., <a href=https://zipshort.net/>ᴢɪᴘꜱʜᴏʀᴛ</a>).
+3️⃣ ᴄʀᴇᴀᴛᴇ ᴀɴ ᴀᴄᴄᴏᴜɴᴛ ᴏɴ ᴀ ꜱʜᴏʀᴛᴇɴᴇʀ (ᴇ.ɢ., <a href=https://banglaflix4k.blogspot.com/>ᴢɪᴘꜱʜᴏʀᴛ</a>).
 4️⃣ ꜱᴇɴᴅ /settings ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ ᴀɴᴅ ᴄᴏɴꜰɪɢᴜʀᴇ ᴛʜᴇ ꜱʜᴏʀᴛᴇɴᴇʀ.
 
 🔍 ᴄʜᴇᴄᴋ ᴅᴇᴛᴀɪʟꜱ: /details
@@ -189,7 +189,7 @@ class script(object):
 🗓️ 02 ᴍᴏɴᴛʜꜱ ➪ 120 ₹ / 120 ⭐
 🗓️ 03 ᴍᴏɴᴛʜꜱ ➪ 220 ₹ / 220 ⭐
 
-📜 <a href='https://t.me/+blcE2jS-iGtkMjNl'>ᴄʜᴇᴄᴋ ᴘʀᴏᴏꜰꜱ</a>
+📜 <a href='https://t.me/TGLinkBase'>ᴄʜᴇᴄᴋ ᴘʀᴏᴏꜰꜱ</a>
 
 ⚠️ ɪᴍᴘᴏʀᴛᴀɴᴛ:
 1️⃣ ꜱᴇɴᴅ ꜱᴄʀᴇᴇɴꜱʜᴏᴛ ᴀꜰᴛᴇʀ ᴘᴀʏᴍᴇɴᴛ.
@@ -199,7 +199,7 @@ class script(object):
 
 ɴᴏᴡ ʏᴏᴜ ᴄᴀɴ ʙᴜʏ ᴏᴜʀ ᴘʀᴇᴍɪᴜᴍ ꜱᴇʀᴠɪᴄᴇ ᴜꜱɪɴɢ ᴛᴇʟᴇɢʀᴀᴍ ꜱᴛᴀʀꜱ.  
 
-ɪꜰ ʏᴏᴜ ꜰᴀᴄᴇ ᴀɴʏ ᴘʀᴏʙʟᴇᴍ, ᴛᴀᴋᴇ ᴀ ꜱᴄʀᴇᴇɴꜱʜᴏᴛ ᴀɴᴅ ꜱᴇɴᴅ ɪᴛ ᴛᴏ - @SilentXBotz
+ɪꜰ ʏᴏᴜ ꜰᴀᴄᴇ ᴀɴʏ ᴘʀᴏʙʟᴇᴍ, ᴛᴀᴋᴇ ᴀ ꜱᴄʀᴇᴇɴꜱʜᴏᴛ ᴀɴᴅ ꜱᴇɴᴅ ɪᴛ ᴛᴏ - @Ctgmovies23
 
 ꜱᴇʟᴇᴄᴛ ʏᴏᴜʀ ᴅᴇꜱɪʀᴇᴅ ᴀᴍᴏᴜɴᴛ ᴀɴᴅ ᴘᴜʀᴄʜᴀꜱᴇ ᴀ ꜱᴜʙꜱᴄʀɪᴘᴛɪᴏɴ 👇.</b>
 """
@@ -244,7 +244,7 @@ class script(object):
 ᴍᴇꜱꜱᴀɢᴇ : <b>{}</b>"""
     
     CAPTION = """<b>{file_name}\n
-📤 ᴜᴘʟᴏᴀᴅᴇᴅ ʙʏ: <a href="https://t.me/SilentXBotz">SɪʟᴇɴᴛXʙᴏᴛᴢ</a></b>"""
+📤 ᴜᴘʟᴏᴀᴅᴇᴅ ʙʏ: <a href="https://t.me/TGLinkBase">TGLinkBase</a></b>"""
 
     IMDB_TEMPLATE_TXT = """
 <b>🎬 ᴛɪᴛʟᴇ: <a href={url}>{title}</a>
