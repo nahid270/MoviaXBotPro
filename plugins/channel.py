@@ -57,103 +57,121 @@ async def media(bot, message):
         return
     media.file_type = file_type
     media.caption = message.caption
+    
+    # ফাইল সেভ করা
     success, silentxbotz = await save_file(media)
+    
+    # === ডিবাগিং প্রিন্ট (লগে দেখার জন্য) ===
+    print(f"File Saved: {success}, ID: {silentxbotz}")
+
     try:  
-        if success and silentxbotz == 1 and await get_status(bot.me.id):            
+        # আমি এখানে get_status চেকটি সরিয়ে দিয়েছি দেখার জন্য যে পোস্ট যায় কিনা
+        # যদি পোস্ট যায়, তার মানে আপনার get_status ফাংশনে বা ডাটাবেসে সমস্যা আছে
+        if success and silentxbotz == 1:            
+            print("Status OK. Calling send_movie_update...")
             await send_movie_update(bot, file_name=media.file_name, caption=media.caption)
+        else:
+            print("File save failed or duplicate.")
+            
     except Exception as e:
-        LOGGER.error(f"Error In Movie Update - {e}")
+        LOGGER.error(f"Error In Media Handler: {e}")
         pass
 
 async def send_movie_update(bot, file_name, caption):
+    print(f"Starting Update for: {file_name}") # ডিবাগ প্রিন্ট
     try:
         file_name = clean_filename(file_name)
-        caption = clean_filename(caption)
+        caption = clean_filename(caption) if caption else file_name
+        
         year_match = re.search(r"\b(19|20)\d{2}\b", caption)
         year = year_match.group(0) if year_match else None      
         season_match = re.search(r"(?i)(?:s|season)0*(\d{1,2})", caption) or re.search(r"(?i)(?:s|season)0*(\d{1,2})", file_name)
+        
         if year:
             file_name = file_name[:file_name.find(year) + 4]
         elif season_match:
             season = season_match.group(1)
             file_name = file_name[:file_name.find(season) + 1]
-        quality = await get_qualities(caption) or "HDRip"
-        pixel = await get_pixels(caption) or "720p"
+            
         language = await get_languages(caption) or "Multi-Audio"      
-        if file_name in notified_movies:
-            return 
-        notified_movies.add(file_name)      
-        tmdb_data = await fetch_tmdb_data(file_name, year)
-        search_movie = file_name.replace(" ", "-")
-        if not tmdb_data:
-            return
         
-        # ফরম্যাটিং সেটআপ (নতুন টেমপ্লেট অনুযায়ী)
+        if file_name in notified_movies:
+            print("Movie already notified.")
+            return 
+            
+        # TMDB ডাটা ফেচ
+        print(f"Fetching TMDB for: {file_name} Year: {year}")
+        tmdb_data = await fetch_tmdb_data(file_name, year)
+        
+        if not tmdb_data:
+            print("❌ TMDB Data NOT FOUND. Stopping update.")
+            # এখানে LOGGER.error দিলে আপনি লগে দেখতে পাবেন
+            LOGGER.error(f"TMDB Data Not Found for {file_name}")
+            return
+            
+        notified_movies.add(file_name)
+        search_movie = file_name.replace(" ", "-")
+
+        # টেমপ্লেট ফিল করা
         full_caption = SILENTX_PREMIUM_UPDATE.format(
-            escape_html(tmdb_data.get("title")),                 # {0}
-            tmdb_data.get("kind", "Movie"),                      # {1}
-            escape_html(language),                               # {2}
-            "MKV" if "mkv" in file_name.lower() else "MP4",      # {3}
-            escape_html(tmdb_data.get("director") or "N/A"),     # {4}
-            escape_html(tmdb_data.get("release_date") or "TBA"), # {5}
-            tmdb_data.get("vote_average", 0),                    # {6}
-            tmdb_data.get("vote_count", 0),                      # {7}
-            escape_html(", ".join(tmdb_data.get("genres", [])[:3])) # {8}
+            escape_html(tmdb_data.get("title")),                 
+            tmdb_data.get("kind", "Movie"),                      
+            escape_html(language),                               
+            "MKV" if "mkv" in file_name.lower() else "MP4",      
+            escape_html(tmdb_data.get("director") or "N/A"),     
+            escape_html(tmdb_data.get("release_date") or "TBA"), 
+            tmdb_data.get("vote_average", 0),                    
+            tmdb_data.get("vote_count", 0),                      
+            escape_html(", ".join(tmdb_data.get("genres", [])[:3])) 
         )        
+        
+        print("Data fetched successfully. Sending visual...")
         await send_with_visual(bot, full_caption, tmdb_data, search_movie)        
     except Exception as e:
-        LOGGER.error(f"Error In Movie Update: {e}")
+        LOGGER.error(f"Error In send_movie_update: {e}")
+        print(f"Error: {e}")
 
 def escape_html(text: str) -> str:
     if not text:
         return ""
     return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-async def get_director_from_crew(crew: list) -> str:
-    directors = [person["name"] for person in crew if person.get("job") == "Director"]
-    return directors[0] if directors else None
-
 def get_trailer_button(tmdb_data: Dict) -> list:
     videos = tmdb_data.get("videos", [])
-    # যদি videos লিস্ট আকারে না থাকে, সেফটি চেক
-    if not isinstance(videos, list):
-         videos = []
-         
+    if not isinstance(videos, list): videos = []
     yt_videos = [v for v in videos if "youtube" in str(v.get("url", "")).lower() or v.get("site") == "YouTube"]    
     if yt_videos:
         key = yt_videos[0].get("key")
         url = yt_videos[0].get("url")
-        # YouTube URL জেনারেট করা
         final_url = url if url else f"https://www.youtube.com/watch?v={key}"
         return [InlineKeyboardButton("▶️ Watch Trailer", url=final_url)]
     return []
     
 async def send_with_visual(bot, caption: str, tmdb_data: Dict, search_movie):
     try:
-        # === পরিবর্তন: এখানে সরাসরি পোস্টার পাথ চেক করা হচ্ছে ===
-        # আগে get_best_visual কল করা হতো যা ল্যান্ডস্কেপ দিতো
+        # === পোস্টার লজিক ===
         poster_path = tmdb_data.get("poster_path")
         backdrop_path = tmdb_data.get("backdrop_path")
         
         visual_url = None
-        
-        # ১. ভার্টিক্যাল পোস্টার (Portrait) প্রায়োরিটি
         if poster_path:
             visual_url = f"https://image.tmdb.org/t/p/original{poster_path}"
-        # ২. না পেলে ব্যাকড্রপ (Landscape)
         elif backdrop_path:
             visual_url = f"https://image.tmdb.org/t/p/original{backdrop_path}"
-        # ৩. তাও না পেলে আগের মেথড বা ডিফল্ট
         else:
              visual_url = await get_best_visual(tmdb_data)
 
-        get_file = f'https://telegram.me/{temp.U_NAME}?start=getfile-{search_movie}'
+        # temp.U_NAME এরর হ্যান্ডলিং
+        try:
+            bot_username = temp.U_NAME
+        except:
+            bot_username = bot.me.username
+
+        get_file = f'https://telegram.me/{bot_username}?start=getfile-{search_movie}'
         
         buttons = [
             [InlineKeyboardButton("📱 Get File", url=get_file)]
         ]
-        
-        # ট্রেইলার বাটন যোগ করা
         trailer_btn = get_trailer_button(tmdb_data)
         if trailer_btn:
             buttons.append(trailer_btn)
@@ -175,21 +193,24 @@ async def send_with_visual(bot, caption: str, tmdb_data: Dict, search_movie):
                             parse_mode=ParseMode.HTML,
                             reply_markup=keyboard
                         )
+                        print("✅ Post Sent Successfully with Image.")
                         return       
         
-        # কোনো কারণে ইমেজ না পেলে ডিফল্ট ইমেজ
+        # ডিফল্ট ইমেজ
         await bot.send_photo(
             chat_id=MOVIE_UPDATE_CHANNEL,
             photo=DEFAULT_IMAGE_URL,
             caption=caption,
             parse_mode=ParseMode.HTML,
             reply_markup=keyboard
-        )       
+        )
+        print("✅ Post Sent with Default Image.")
+        
     except Exception as e:
         LOGGER.error(f"Visual Send Error: {e}")
+        print(f"Visual Error: {e}")
 
 async def generate_premium_filename(title: str, extension=".jpg") -> str:
-    # ফাইলের নামে স্পেস সরিয়ে আন্ডারস্কোর দেওয়া হলো যাতে টেলিগ্রাম ভালো ভাবে প্রসেস করে
     clean_title = re.sub(r'[^\w\s-]', '', str(title))[:20].strip().replace(" ", "_")
     timestamp = datetime.now().strftime("%y%m%d%H%M")
     unique_id = hashlib.md5(str(title).encode()).hexdigest()[:6]
