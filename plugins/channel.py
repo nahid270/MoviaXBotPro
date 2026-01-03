@@ -41,7 +41,7 @@ SILENTX_PREMIUM_UPDATE = """
 <b>│</b>
 <b>╰───────────────────</b>
 
-<b>🚀 Pᴏᴡᴇʀᴇᴅ Bʏ @SilentXBotz</b>
+<b>🚀 Pᴏᴡᴇʀᴇᴅ Bʏ @TGLinkBase</b>
 """
 
 notified_movies = set()
