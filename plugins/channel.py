@@ -22,7 +22,7 @@ CAPTION_LANGUAGES = ["Bhojpuri", "Hindi", "Bengali", "Tamil", "English", "Bangla
 
 DEFAULT_IMAGE_URL = "https://te.legra.ph/file/88d845b4f8a024a71465d.jpg"
 
-# === আপনার পছন্দ করা নতুন টেমপ্লেট ===
+# === আপনার পছন্দের মডার্ন টেমপ্লেট ===
 SILENTX_PREMIUM_UPDATE = """
 <b>⚡️ ℕ𝔼𝕎 ℙℝ𝔼𝕄𝕀𝕌𝕄 𝔸ℝℝ𝕀𝕍𝔼𝔻 ⚡️</b>
 
@@ -58,60 +58,72 @@ async def media(bot, message):
     media.file_type = file_type
     media.caption = message.caption
     
-    # ফাইল সেভ করা
+    # ডাটাবেসে ফাইল সেভ করা
     success, silentxbotz = await save_file(media)
     
-    # === ডিবাগিং প্রিন্ট (লগে দেখার জন্য) ===
-    print(f"File Saved: {success}, ID: {silentxbotz}")
-
     try:  
-        # আমি এখানে get_status চেকটি সরিয়ে দিয়েছি দেখার জন্য যে পোস্ট যায় কিনা
-        # যদি পোস্ট যায়, তার মানে আপনার get_status ফাংশনে বা ডাটাবেসে সমস্যা আছে
-        if success and silentxbotz == 1:            
-            print("Status OK. Calling send_movie_update...")
+        # পোস্ট পাঠানোর লজিক
+        if success and silentxbotz == 1: 
+            # get_status চেক যদি দরকার হয় তবে এখানে যোগ করতে পারেন, 
+            # আপাতত ডাইরেক্ট আপডেট কল করছি যাতে পোস্ট মিস না হয়।
             await send_movie_update(bot, file_name=media.file_name, caption=media.caption)
-        else:
-            print("File save failed or duplicate.")
-            
     except Exception as e:
         LOGGER.error(f"Error In Media Handler: {e}")
         pass
 
 async def send_movie_update(bot, file_name, caption):
-    print(f"Starting Update for: {file_name}") # ডিবাগ প্রিন্ট
     try:
-        file_name = clean_filename(file_name)
-        caption = clean_filename(caption) if caption else file_name
+        # === ১. নাম ক্লিনিং লজিক (যাতে সঠিক মুভি আসে) ===
+        # ফাইলের নাম থেকে ডট, আন্ডারস্কোর সরিয়ে স্পেস দেওয়া
+        clean_name = re.sub(r"[._-]", " ", file_name)
+        # ব্র্যাকেটের ভেতরের লেখা রিমুভ করা
+        clean_name = re.sub(r"\[.*?\]|\(.*?\)", "", clean_name)
         
-        year_match = re.search(r"\b(19|20)\d{2}\b", caption)
-        year = year_match.group(0) if year_match else None      
-        season_match = re.search(r"(?i)(?:s|season)0*(\d{1,2})", caption) or re.search(r"(?i)(?:s|season)0*(\d{1,2})", file_name)
+        # সাল (Year) খোঁজা
+        year_match = re.findall(r"\b(19|20)\d{2}\b", clean_name)
+        year = None
+        if year_match:
+            year = year_match[-1] # শেষের সালটা নেওয়া (যেমন: Movie Name 2025 returns 2025)
         
+        # সার্চ কুয়েরি তৈরি
         if year:
-            file_name = file_name[:file_name.find(year) + 4]
-        elif season_match:
-            season = season_match.group(1)
-            file_name = file_name[:file_name.find(season) + 1]
-            
-        language = await get_languages(caption) or "Multi-Audio"      
-        
+            # সাল পেলে, সালের আগের অংশটুকু নাম হিসেবে নেব
+            search_query = clean_name.split(year)[0].strip()
+        else:
+            # সাল না পেলে ফালতু শব্দগুলো রিমুভ করব
+            junk_words = [
+                "1080p", "720p", "480p", "360p", "2160p", "4k", "5k", "8k", "hdr",
+                "hdrip", "dvdrip", "web-dl", "webdl", "bluray", "remux", "h264",
+                "x264", "h265", "x265", "hevc", "10bit", "dual audio", "multi audio",
+                "hindi", "english", "bengali", "esub", "sub", "mkv", "mp4", "avi"
+            ]
+            temp_name = clean_name.lower()
+            for junk in junk_words:
+                temp_name = temp_name.replace(junk, "")
+            search_query = temp_name.strip()
+
+        # নাম খুব ছোট হয়ে গেলে অরিজিনাল নাম ব্যবহার করা
+        if len(search_query) < 2:
+            search_query = clean_name
+
+        # ডুপ্লিকেট চেক
         if file_name in notified_movies:
-            print("Movie already notified.")
             return 
             
-        # TMDB ডাটা ফেচ
-        print(f"Fetching TMDB for: {file_name} Year: {year}")
-        tmdb_data = await fetch_tmdb_data(file_name, year)
+        # === ২. TMDB ডাটা ফেচ (সঠিক নাম দিয়ে) ===
+        tmdb_data = await fetch_tmdb_data(search_query, year)
         
         if not tmdb_data:
-            print("❌ TMDB Data NOT FOUND. Stopping update.")
-            # এখানে LOGGER.error দিলে আপনি লগে দেখতে পাবেন
-            LOGGER.error(f"TMDB Data Not Found for {file_name}")
-            return
-            
+            return          
+        
         notified_movies.add(file_name)
-        search_movie = file_name.replace(" ", "-")
+        
+        # লিংকের জন্য স্লাগ তৈরি
+        search_movie = search_query.replace(" ", "-")
 
+        # অন্যান্য তথ্য
+        language = await get_languages(file_name) or "Multi-Audio"      
+        
         # টেমপ্লেট ফিল করা
         full_caption = SILENTX_PREMIUM_UPDATE.format(
             escape_html(tmdb_data.get("title")),                 
@@ -125,15 +137,12 @@ async def send_movie_update(bot, file_name, caption):
             escape_html(", ".join(tmdb_data.get("genres", [])[:3])) 
         )        
         
-        print("Data fetched successfully. Sending visual...")
         await send_with_visual(bot, full_caption, tmdb_data, search_movie)        
     except Exception as e:
-        LOGGER.error(f"Error In send_movie_update: {e}")
-        print(f"Error: {e}")
+        LOGGER.error(f"Error In Movie Update Logic: {e}")
 
 def escape_html(text: str) -> str:
-    if not text:
-        return ""
+    if not text: return ""
     return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 def get_trailer_button(tmdb_data: Dict) -> list:
@@ -149,19 +158,25 @@ def get_trailer_button(tmdb_data: Dict) -> list:
     
 async def send_with_visual(bot, caption: str, tmdb_data: Dict, search_movie):
     try:
-        # === পোস্টার লজিক ===
+        # === ৩. পোস্টার লজিক (ভার্টিক্যাল/লম্বা ছবি) ===
         poster_path = tmdb_data.get("poster_path")
         backdrop_path = tmdb_data.get("backdrop_path")
         
         visual_url = None
+        # আগে পোস্টার দেখবে
         if poster_path:
             visual_url = f"https://image.tmdb.org/t/p/original{poster_path}"
+        # না পেলে ব্যাকড্রপ
         elif backdrop_path:
             visual_url = f"https://image.tmdb.org/t/p/original{backdrop_path}"
+        # তাও না পেলে ডিফল্ট বা অন্য মেথড
         else:
-             visual_url = await get_best_visual(tmdb_data)
+             try:
+                 visual_url = await get_best_visual(tmdb_data)
+             except:
+                 visual_url = DEFAULT_IMAGE_URL
 
-        # temp.U_NAME এরর হ্যান্ডলিং
+        # ইউজারনেম সেফটি চেক
         try:
             bot_username = temp.U_NAME
         except:
@@ -178,37 +193,36 @@ async def send_with_visual(bot, caption: str, tmdb_data: Dict, search_movie):
             
         keyboard = InlineKeyboardMarkup(buttons)
         
-        if visual_url:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(visual_url, timeout=aiohttp.ClientTimeout(total=20)) as img_resp:
-                    if img_resp.status == 200:
-                        img_bytes = await img_resp.read()
-                        photo_file = io.BytesIO(img_bytes)
-                        photo_file.name = await generate_premium_filename(tmdb_data.get("title", "image"))
-                        
-                        await bot.send_photo(
-                            chat_id=MOVIE_UPDATE_CHANNEL, 
-                            photo=photo_file, 
-                            caption=caption,
-                            parse_mode=ParseMode.HTML,
-                            reply_markup=keyboard
-                        )
-                        print("✅ Post Sent Successfully with Image.")
-                        return       
-        
-        # ডিফল্ট ইমেজ
+        if visual_url and visual_url != DEFAULT_IMAGE_URL:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(visual_url, timeout=aiohttp.ClientTimeout(total=20)) as img_resp:
+                        if img_resp.status == 200:
+                            img_bytes = await img_resp.read()
+                            photo_file = io.BytesIO(img_bytes)
+                            photo_file.name = await generate_premium_filename(tmdb_data.get("title", "image"))
+                            
+                            await bot.send_photo(
+                                chat_id=MOVIE_UPDATE_CHANNEL, 
+                                photo=photo_file, 
+                                caption=caption,
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=keyboard
+                            )
+                            return
+            except Exception as e:
+                LOGGER.error(f"Image Download Failed: {e}")
+
+        # ডিফল্ট ইমেজ পাঠানো (যদি উপরেরটা ফেইল করে)
         await bot.send_photo(
             chat_id=MOVIE_UPDATE_CHANNEL,
             photo=DEFAULT_IMAGE_URL,
             caption=caption,
             parse_mode=ParseMode.HTML,
             reply_markup=keyboard
-        )
-        print("✅ Post Sent with Default Image.")
-        
+        )       
     except Exception as e:
         LOGGER.error(f"Visual Send Error: {e}")
-        print(f"Visual Error: {e}")
 
 async def generate_premium_filename(title: str, extension=".jpg") -> str:
     clean_title = re.sub(r'[^\w\s-]', '', str(title))[:20].strip().replace(" ", "_")
