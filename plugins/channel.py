@@ -12,11 +12,59 @@ from utils import temp
 # ====================================================================
 # 🔥 TMDB API KEY
 TMDB_API_KEY = "7dc544d9253bccc3cfecc1c677f69819"
-# ⏳ ব্যাচিং টাইম (১০ সেকেন্ড)
+# ⏳ কত সেকেন্ড অপেক্ষা করবে? (ডিফল্ট ১০ সেকেন্ড)
 BATCH_TIME = 10 
 # ====================================================================
 
-# --- 1. ডাটাবেস হ্যান্ডলার ---
+# --- 1. রেফারেন্স কোড থেকে নেওয়া কনফিগারেশন এবং লিস্ট ---
+
+# বিশাল ইগনোর লিস্ট (রেফারেন্স কোড থেকে নেওয়া)
+IGNORE_WORDS = {
+    "rarbg", "dub", "sub", "sample", "mkv", "aac", "combined",
+    "action", "adventure", "animation", "biography", "comedy", "crime", 
+    "documentary", "drama", "fantasy", "film-noir", "history", 
+    "horror", "music", "musical", "mystery", "romance", "sci-fi", "sport", 
+    "thriller", "war", "western", "hdcam", "hdtc", "camrip", "ts", "tc", 
+    "telesync", "dvdscr", "dvdrip", "predvd", "webrip", "web-dl", "tvrip", 
+    "hdtv", "web dl", "webdl", "bluray", "brrip", "bdrip", "360p", "480p", 
+    "720p", "1080p", "2160p", "4k", "1440p", "540p", "240p", "140p", "hevc", 
+    "hdrip", "hin", "hindi", "tam", "tamil", "kan", "kannada", "tel", "telugu", 
+    "mal", "malayalam", "eng", "english", "pun", "punjabi", "ben", "bengali", 
+    "mar", "marathi", "guj", "gujarati", "urd", "urdu", "kor", "korean", "jpn", 
+    "japanese", "nf", "netflix", "sonyliv", "sony", "sliv", "amzn", "prime", 
+    "primevideo", "hotstar", "zee5", "jio", "jhs", "aha", "hbo", "paramount", 
+    "apple", "hoichoi", "sunnxt", "viki", "official", "download", "link", 
+    "original", "part", "vol", "season", "episode", "ep", "s0", "e0",
+    "cinevood", "hdhub4u", "skymoviedhd", "p-23", "moviesmod"
+}
+
+OTT_PLATFORMS = {
+    "nf": "Netflix", "netflix": "Netflix",
+    "sonyliv": "SonyLiv", "sony": "SonyLiv", "sliv": "SonyLiv",
+    "amzn": "Amazon Prime Video", "prime": "Amazon Prime Video", "primevideo": "Amazon Prime Video",
+    "hotstar": "Disney+ Hotstar", "zee5": "Zee5",
+    "jio": "JioHotstar", "jhs": "JioHotstar",
+    "aha": "Aha", "hbo": "HBO Max", "paramount": "Paramount+",
+    "apple": "Apple TV+", "hoichoi": "Hoichoi", "sunnxt": "Sun NXT", "viki": "Viki"
+}
+
+CAPTION_LANGUAGES = {
+    "hin": "Hindi", "hindi": "Hindi", "tam": "Tamil", "tamil": "Tamil",
+    "tel": "Telugu", "telugu": "Telugu", "mal": "Malayalam", "malayalam": "Malayalam",
+    "eng": "English", "english": "English", "ben": "Bengali", "bengali": "Bengali"
+}
+
+# Regex Patterns (রেফারেন্স কোড থেকে)
+CLEAN_PATTERN = re.compile(r'@[^ \n\r\t\.,:;!?()\[\]{}<>\\/"\'=_%]+|\bwww\.[^\s\]\)]+|\([\@^]+\)|\[[\@^]+\]')
+NORMALIZE_PATTERN = re.compile(r"[._]+|[()\[\]{}:;'–!,.?_]")
+QUALITY_PATTERN = re.compile(r"\b(?:HDCam|HDTC|CamRip|TS|TC|TeleSync|DVDScr|DVDRip|PreDVD|WEBRip|WEB-DL|TVRip|HDTV|WEB DL|WebDl|BluRay|BRRip|BDRip|360p|480p|720p|1080p|2160p|4K|1440p|540p|240p|140p|HEVC|HDRip)\b", re.IGNORECASE)
+YEAR_PATTERN = re.compile(r"(?<![A-Za-z0-9])(?:19|20)\d{2}(?![A-Za-z0-9])")
+RANGE_REGEX = re.compile(r'\bS(\d{1,2})[^\w\n\r]*E(?:p(?:isode)?)?0*(\d{1,2})\s*(?:to|-)\s*(?:E(?:p(?:isode)?)?)?0*(\d{1,2})',re.IGNORECASE)
+SINGLE_REGEX = re.compile(r'\bS(\d{1,2})[^\w\n\r]*E(?:p(?:isode)?)?0*(\d{1,3})', re.IGNORECASE)
+NAMED_REGEX = re.compile(r'Season\s*0*(\d{1,2})[\s\-,:]*Ep(?:isode)?\s*0*(\d{1,3})', re.IGNORECASE)
+EP_ONLY_RANGE = re.compile(r'\b(?:EP|Episode)0*(\d{1,3})\s*-\s*0*(\d{1,3})\b',re.IGNORECASE)
+
+# --- 2. ডাটাবেস হ্যান্ডলার ---
 class MovieUpdateDB:
     def __init__(self, uri, database_name):
         self._client = AsyncIOMotorClient(uri)
@@ -42,94 +90,105 @@ class MovieUpdateDB:
         )
 
 mdb = MovieUpdateDB(DATABASE_URI, DATABASE_NAME)
-
-# --- 2. সেটিংস এবং ভেরিয়েবল ---
+PENDING_QUEUE = {}
 MEDIA_FILTER = filters.document | filters.video | filters.audio
 DEFAULT_IMAGE_URL = "https://te.legra.ph/file/88d845b4f8a024a71465d.jpg"
-PENDING_QUEUE = {} 
 
-CAPTION_LANGUAGES = {
-    "hin": "Hindi", "eng": "English", "ben": "Bengali", "tam": "Tamil", 
-    "tel": "Telugu", "mal": "Malayalam", "kan": "Kannada", "kor": "Korean", 
-    "jpn": "Japanese", "spa": "Spanish", "fre": "French", "urd": "Urdu"
-}
+# --- 3. হেল্পার ফাংশন (লজিক: রেফারেন্স কোড) ---
 
-# Regex Patterns
-QUALITY_PATTERN = re.compile(r"\b(?:480p|720p|1080p|2160p|4k|5k|8k|10bit|HDRip|WEB-DL|Bluray|HEVC|H264|H265)\b", re.IGNORECASE)
-SEASON_EPISODE_PATTERN = re.compile(r'(?:S|Season)\s*(\d+).*?(?:E|Episode|Ep)\s*(\d+)', re.IGNORECASE)
-YEAR_PATTERN = re.compile(r'\b(19|20)\d{2}\b')
+def clean_mentions_links(text: str) -> str:
+    return CLEAN_PATTERN.sub("", text or "").strip()
 
-# --- 3. 🔥 সুপার অ্যাডভান্সড নাম ক্লিনিং (OTT + Junk Removal) ---
-def clean_filename(name):
-    # ১. ব্র্যাকেটের ভেতরের সব লেখা রিমুভ (শুরুতেই)
-    # [Netflix] বা (Official) বা {Link} সব উড়ে যাবে
-    name = re.sub(r'\[.*?\]', '', name)
-    name = re.sub(r'\(.*?\)', '', name)
-    name = re.sub(r'\{.*?\}', '', name)
+def normalize(s: str) -> str:
+    s = NORMALIZE_PATTERN.sub(" ", s)
+    return re.sub(r"\s+", " ", s).strip()
 
-    # ২. সাল (Year) খুঁজে বের করা
-    year_match = YEAR_PATTERN.search(name)
-    year = year_match.group(0) if year_match else None
+def remove_ignored_words(text: str) -> str:
+    # এই ফাংশনটি ফাইলের নাম থেকে সব ফালতু শব্দ ডিলিট করে দেয়
+    IGNORE_WORDS_LOWER = {w.lower() for w in IGNORE_WORDS}
+    return " ".join(word for word in text.split() if word.lower() not in IGNORE_WORDS_LOWER)
 
-    # ৩. সালের পরের সব অংশ বাদ দিয়ে দেওয়া
-    if year:
-        name = name.split(year)[0]
+def get_qualities(text: str) -> str:
+    qualities = QUALITY_PATTERN.findall(text)
+    return ", ".join(list(set(qualities))) if qualities else "HD"
 
-    # ৪. ডট, আন্ডারস্কোর এবং হাইফেন স্পেস দিয়ে রিপ্লেস করা
-    name = name.replace(".", " ").replace("_", " ").replace("-", " ")
+def extract_ott_platform(text: str) -> str:
+    text = text.lower()
+    platforms = {plat for key, plat in OTT_PLATFORMS.items() if key in text}
+    return " | ".join(platforms) if platforms else "N/A"
 
-    # ৫. 🚫 অটিটি (OTT) এবং ফালতু শব্দের লিস্ট
-    junk_words = [
-        # OTT Platforms
-        "netflix", "nf", "amzn", "amazon", "prime", "disney", "hotstar", "hulu", 
-        "hbo", "max", "apple", "atvp", "sony", "sonyliv", "zee5", "jiocinema", "jio", 
-        "hoichoi", "chorki", "bioscope", "toffee", "voot", "altbalaji", "klikkk", 
-        "ullu", "kooku", "neulion",
-        
-        # Resolutions & Quality
-        "1080p", "720p", "480p", "360p", "2160p", "4k", "5k", "8k", "sd", "hd", "fhd", "uhd",
-        "web-dl", "webdl", "bluray", "hdrip", "rip", "camrip", "dvdscr", "hdtc", "dvdrip", "bdrip",
-        
-        # Codecs & Formats
-        "hevc", "x264", "x265", "h264", "h265", "10bit", "60fps", "120fps", "hdr", "sdr",
-        "mkv", "mp4", "avi", "flv", "mov", "aac", "ac3", "dd5.1", "dd+", "atmos",
-        
-        # Audio & Languages
-        "hindi", "english", "dual", "multi", "audio", "sub", "esub", "dubbed", "tam", "tel", "mal",
-        
-        # Misc Junk
-        "p-23", "org", "sample", "unknown", "download", "link", "official", "original", "part", "vol"
-    ]
+def extract_season_episode(filename: str):
+    if m := EP_ONLY_RANGE.search(filename):
+        return 1, f"{int(m.group(1))}-{int(m.group(2))}"
+    for pattern in (RANGE_REGEX, SINGLE_REGEX, NAMED_REGEX):
+        if m := pattern.search(filename):
+            season = int(m.group(1))
+            if pattern == RANGE_REGEX:
+                ep = f"{m.group(2)}-{m.group(3)}"
+            else:
+                ep = m.group(2)
+            return season, ep
+    return None, None
+
+# --- 🔥 MAIN EXTRACTION LOGIC (Based on Reference Code) ---
+def extract_media_info(filename: str, caption: str):
+    # 1. Basic Cleaning
+    filename = normalize(clean_mentions_links(filename).title())
+    caption_clean = clean_mentions_links(caption).lower() if caption else ""
+    unified = f"{caption_clean} {filename.lower()}".strip()
+
+    season = episode = year = None
+    tag = "#MOVIE"
     
-    # ৬. লুপ চালিয়ে শব্দগুলো রিমুভ করা
-    for junk in junk_words:
-        name = re.sub(r'\b' + junk + r'\b', '', name, flags=re.IGNORECASE)
+    # 2. Extract Details BEFORE destroying the name
+    quality = get_qualities(filename) or get_qualities(caption_clean) or "HD"
+    ott_platform = extract_ott_platform(f"{filename} {caption_clean}")
+    
+    lang_keys = {k for k in CAPTION_LANGUAGES if k in caption_clean or k in filename.lower()}
+    language = ", ".join(sorted({CAPTION_LANGUAGES[k] for k in lang_keys})) if lang_keys else "Multi-Audio"
 
-    # ৭. ক্লিন করার পর অতিরিক্ত স্পেস রিমুভ
-    clean_name = re.sub(r'\s+', ' ', name).strip()
+    # 3. Handle Series (Season/Episode)
+    season, episode = extract_season_episode(filename)
+    processed_raw = filename
+    
+    if season is not None:
+        tag = "#SERIES"
+        # Remove Season/Episode parts from name
+        for pattern in (RANGE_REGEX, SINGLE_REGEX, NAMED_REGEX, EP_ONLY_RANGE):
+            if m := pattern.search(filename):
+                match_str = m.group(0)
+                start_idx = filename.find(match_str)
+                processed_raw = filename[:start_idx] # Keep only part before S01E01
+                break
+    else:
+        # 4. Handle Movie Year
+        if year_match := YEAR_PATTERN.search(filename):
+            year = year_match.group(0)
+            year_idx = filename.find(year)
+            processed_raw = filename[:year_idx] # Keep part before year
+        
+    # 5. 🔥 THE CLEANING MAGIC: Remove Ignored Words
+    # Normalize again and remove junk words
+    base_name = normalize(remove_ignored_words(normalize(processed_raw)))
+    
+    # If name becomes too short, use first word
+    if len(base_name) < 2:
+        base_name = processed_raw.split()[0] if processed_raw else "Unknown"
 
-    # ৮. যদি নাম খুব ছোট হয়ে যায়, তবে ব্যাকআপ হিসেবে প্রথম শব্দটি রাখা
-    if len(clean_name) < 2:
-        clean_name = name.split()[0] if name else "Unknown"
+    return {
+        "base_name": base_name.strip(),
+        "year": year,
+        "quality": quality,
+        "language": language,
+        "season": season,
+        "episode": episode,
+        "tag": tag,
+        "ott_platform": ott_platform
+    }
 
-    return clean_name, year
-
-def get_quality(name):
-    match = QUALITY_PATTERN.findall(name)
-    return ", ".join(list(set(match))) if match else "HD"
-
-def get_language(name):
-    langs = []
-    name_lower = name.lower()
-    for code, lang in CAPTION_LANGUAGES.items():
-        if code in name_lower or lang.lower() in name_lower:
-            langs.append(lang)
-    return ", ".join(langs) if langs else "Multi-Audio"
-
-# --- 4. TMDB এবং ক্যাপশন ---
+# --- 4. TMDB Fetcher ---
 async def fetch_tmdb(query, year):
     try:
-        query = query.strip()
         url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={query}"
         if year: url += f"&year={year}"
         
@@ -137,12 +196,12 @@ async def fetch_tmdb(query, year):
             async with session.get(url) as resp:
                 data = await resp.json()
         
-        # যদি প্রথম বারে না পায়, স্পেশাল ক্যারেক্টার বাদ দিয়ে আবার চেষ্টা করবে
-        if not data.get('results'): 
-            clean_query = re.sub(r'[^\w\s]', '', query)
-            if clean_query != query and len(clean_query) > 1:
-                return await fetch_tmdb(clean_query, year)
-            return None
+        if not data.get('results'):
+             # Fallback: Try cleaning query more if failed
+             clean_query = re.sub(r'[^\w\s]', '', query)
+             if clean_query != query and len(clean_query) > 1:
+                 return await fetch_tmdb(clean_query, year)
+             return None
         
         res = data['results'][0]
         m_id = res['id']
@@ -237,9 +296,9 @@ def generate_caption(data, files_list):
 """
     return caption
 
-# --- 5. ব্যাকগ্রাউন্ড প্রসেসর ---
+# --- 5. ব্যাকগ্রাউন্ড প্রসেসর (Batch Worker) ---
 async def batch_processor(bot, unique_id, clean_name, year):
-    await asyncio.sleep(BATCH_TIME) 
+    await asyncio.sleep(BATCH_TIME)
     
     if unique_id not in PENDING_QUEUE:
         return
@@ -250,6 +309,7 @@ async def batch_processor(bot, unique_id, clean_name, year):
         search_slug = clean_name.replace(" ", "-")
         db_movie = await mdb.get_movie(unique_id)
         
+        # --- NEW MOVIE ---
         if not db_movie:
             tmdb_data = await fetch_tmdb(clean_name, year)
             if not tmdb_data: 
@@ -278,10 +338,10 @@ async def batch_processor(bot, unique_id, clean_name, year):
             )
             await mdb.update_message_id(unique_id, msg.id)
             
+        # --- UPDATE MOVIE ---
         else:
             existing_filenames = [f['filename'] for f in db_movie['files']]
             new_files = [f for f in files_to_process if f['filename'] not in existing_filenames]
-            
             if not new_files: return
 
             await mdb.update_movie_files(unique_id, new_files)
@@ -311,10 +371,11 @@ async def batch_processor(bot, unique_id, clean_name, year):
     except Exception as e:
         print(f"Batch Processor Error: {e}")
 
-# --- 6. মেইন হ্যান্ডলার ---
+# --- 6. Main Handler ---
 @Client.on_message(filters.chat(CHANNELS) & MEDIA_FILTER)
 async def media_handler(bot, message):
     try:
+        # File Type Fix
         for file_type in ("document", "video", "audio"):
             media = getattr(message, file_type, None)
             if media is not None:
@@ -324,31 +385,28 @@ async def media_handler(bot, message):
 
         media.file_type = file_type 
         media.caption = message.caption or ""
-
         filename = media.file_name
         
+        # Save to DB
         success, info = await save_file(media)
         if not success: return 
         
-        # ক্লিনিং কল করা
-        clean_name, year = clean_filename(filename)
-        quality = get_quality(filename)
-        language = get_language(filename + media.caption)
+        # 🔥 USE NEW EXTRACTION LOGIC
+        info_data = extract_media_info(filename, media.caption)
         
+        clean_name = info_data["base_name"]
+        year = info_data["year"]
         unique_id = f"{clean_name}_{year}" if year else clean_name
-        
-        se_match = SEASON_EPISODE_PATTERN.search(filename)
-        season = int(se_match.group(1)) if se_match else None
-        episode = int(se_match.group(2)) if se_match else None
         
         file_data = {
             "filename": filename,
-            "quality": quality,
-            "language": language,
-            "season": season,
-            "episode": episode
+            "quality": info_data["quality"],
+            "language": info_data["language"],
+            "season": info_data["season"],
+            "episode": info_data["episode"]
         }
         
+        # Batching Logic
         if unique_id not in PENDING_QUEUE:
             PENDING_QUEUE[unique_id] = [file_data]
             asyncio.create_task(batch_processor(bot, unique_id, clean_name, year))
