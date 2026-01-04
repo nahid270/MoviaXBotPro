@@ -12,6 +12,8 @@ from utils import temp
 # ====================================================================
 # 🔥 TMDB API KEY
 TMDB_API_KEY = "7dc544d9253bccc3cfecc1c677f69819"
+# ⏳ কত সেকেন্ড অপেক্ষা করবে? (ডিফল্ট ১০ সেকেন্ড)
+BATCH_TIME = 10 
 # ====================================================================
 
 # --- 1. ডাটাবেস হ্যান্ডলার ---
@@ -19,7 +21,7 @@ class MovieUpdateDB:
     def __init__(self, uri, database_name):
         self._client = AsyncIOMotorClient(uri)
         self.db = self._client[database_name]
-        self.col = self.db["movie_updates_v3"] # v3 for fresh start with fixes
+        self.col = self.db["movie_updates_v3"] 
 
     async def get_movie(self, unique_id):
         return await self.col.find_one({"_id": unique_id})
@@ -27,10 +29,11 @@ class MovieUpdateDB:
     async def add_movie(self, unique_id, data):
         await self.col.insert_one(data)
 
-    async def update_movie_files(self, unique_id, file_data):
+    async def update_movie_files(self, unique_id, new_files_list):
+        # একসাথে অনেকগুলো ফাইল লিস্টে পুশ করা
         await self.col.update_one(
             {"_id": unique_id},
-            {"$push": {"files": file_data}}
+            {"$push": {"files": {"$each": new_files_list}}}
         )
     
     async def update_message_id(self, unique_id, msg_id):
@@ -41,11 +44,12 @@ class MovieUpdateDB:
 
 mdb = MovieUpdateDB(DATABASE_URI, DATABASE_NAME)
 
-# --- 2. সেটিংস এবং লক সিস্টেম ---
+# --- 2. সেটিংস এবং ব্যাচিং ভেরিয়েবল ---
 MEDIA_FILTER = filters.document | filters.video | filters.audio
 DEFAULT_IMAGE_URL = "https://te.legra.ph/file/88d845b4f8a024a71465d.jpg"
-# রেস কন্ডিশন ফিক্স করার জন্য লক
-PROCESSING_LOCKS = {}
+
+# ব্যাচ প্রসেসিং এর জন্য ডিকশনারি
+PENDING_QUEUE = {} 
 
 CAPTION_LANGUAGES = {
     "hin": "Hindi", "eng": "English", "ben": "Bengali", "tam": "Tamil", 
@@ -61,20 +65,15 @@ JUNK_PATTERN = re.compile(r'[._]')
 
 # --- 3. হেল্পার ফাংশন ---
 def clean_filename(name):
-    # ১. নাম থেকে ডট এবং আন্ডারস্কোর সরানো
     clean = JUNK_PATTERN.sub(" ", name)
-    # ২. ব্র্যাকেট রিমুভ
     clean = re.sub(r'\[.*?\]|\(.*?\)', '', clean)
     
-    # ৩. সাল খুঁজে বের করা
     year_match = YEAR_PATTERN.search(clean)
     year = year_match.group(0) if year_match else None
     
-    # ৪. সালের পরের অংশ কেটে ফেলা (কিন্তু সালটা নামের সাথে রাখা দরকার হতে পারে সার্চের জন্য)
     if year:
-        clean = clean.split(year)[0] # নাম আলাদা
+        clean = clean.split(year)[0]
     
-    # ৫. ফালতু শব্দ রিমুভ
     junk_words = [
         "1080p", "720p", "480p", "360p", "web-dl", "webdl", "bluray", "mkv", "mp4", "avi",
         "hindi", "english", "dual", "audio", "sub", "esub", "x264", "x265", "hevc", "10bit",
@@ -98,10 +97,9 @@ def get_language(name):
             langs.append(lang)
     return ", ".join(langs) if langs else "Multi-Audio"
 
-# --- 4. TMDB থেকে তথ্য আনা ---
+# --- 4. TMDB এবং ক্যাপশন ---
 async def fetch_tmdb(query, year):
     try:
-        # সাল থাকলে সাল সহ সার্চ, না থাকলে শুধু নাম
         url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={query}"
         if year: url += f"&year={year}"
         
@@ -115,7 +113,6 @@ async def fetch_tmdb(query, year):
         m_id = res['id']
         m_type = res['media_type']
         
-        # ডিটেইলস আনা
         det_url = f"https://api.themoviedb.org/3/{m_type}/{m_id}?api_key={TMDB_API_KEY}"
         async with aiohttp.ClientSession() as session:
             async with session.get(det_url) as resp:
@@ -143,7 +140,6 @@ async def fetch_tmdb(query, year):
         print(f"TMDB Error: {e}")
         return None
 
-# --- 5. মেসেজ ডিজাইন জেনারেটর ---
 def generate_caption(data, files_list):
     seasons = {}
     qualities = set()
@@ -159,7 +155,6 @@ def generate_caption(data, files_list):
             if s not in seasons: seasons[s] = []
             seasons[s].append(e)
             
-    # এপিসোড রেঞ্জ সাজানো (Smart Episode Grouping)
     epi_text = ""
     if seasons:
         for s in sorted(seasons.keys()):
@@ -207,7 +202,86 @@ def generate_caption(data, files_list):
 """
     return caption
 
-# --- 6. মেইন হ্যান্ডলার ---
+# --- 5. ব্যাকগ্রাউন্ড প্রসেসর (Worker) ---
+async def batch_processor(bot, unique_id, clean_name, year):
+    await asyncio.sleep(BATCH_TIME) # ১০ সেকেন্ড অপেক্ষা
+    
+    # কিউ থেকে ফাইলগুলো বের করা
+    if unique_id not in PENDING_QUEUE:
+        return
+        
+    files_to_process = PENDING_QUEUE.pop(unique_id)
+    
+    try:
+        search_slug = clean_name.replace(" ", "-")
+        db_movie = await mdb.get_movie(unique_id)
+        
+        # --- নতুন মুভি ---
+        if not db_movie:
+            tmdb_data = await fetch_tmdb(clean_name, year)
+            if not tmdb_data: 
+                tmdb_data = {
+                    "title": clean_name, "rating": "N/A", "genres": "Unknown",
+                    "year": year or "N/A", "plot": "N/A", "poster": DEFAULT_IMAGE_URL, "type": "Movie"
+                }
+            
+            full_data = {
+                "_id": unique_id,
+                "tmdb": tmdb_data,
+                "files": files_to_process, # সব ফাইল একসাথে
+                "message_id": None
+            }
+            await mdb.add_movie(unique_id, full_data)
+            
+            cap = generate_caption(tmdb_data, files_to_process)
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton('ɢᴇᴛ ғɪʟᴇs', url=f"https://t.me/{bot.me.username}?start=getfile-{search_slug}")]])
+            
+            msg = await bot.send_photo(
+                chat_id=MOVIE_UPDATE_CHANNEL,
+                photo=tmdb_data['poster'],
+                caption=cap,
+                reply_markup=btn,
+                parse_mode=enums.ParseMode.HTML
+            )
+            await mdb.update_message_id(unique_id, msg.id)
+            
+        # --- আপডেট মুভি ---
+        else:
+            # শুধু নতুন ইউনিক ফাইলগুলো ফিল্টার করা
+            existing_filenames = [f['filename'] for f in db_movie['files']]
+            new_files = [f for f in files_to_process if f['filename'] not in existing_filenames]
+            
+            if not new_files: return
+
+            await mdb.update_movie_files(unique_id, new_files)
+            
+            # ডাটাবেস থেকে ফ্রেশ ডাটা আনা
+            db_movie = await mdb.get_movie(unique_id)
+            cap = generate_caption(db_movie['tmdb'], db_movie['files'])
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton('ɢᴇᴛ ғɪʟᴇs', url=f"https://t.me/{bot.me.username}?start=getfile-{search_slug}")]])
+            
+            if db_movie.get('message_id'):
+                try:
+                    await bot.edit_message_caption(
+                        chat_id=MOVIE_UPDATE_CHANNEL,
+                        message_id=db_movie['message_id'],
+                        caption=cap,
+                        reply_markup=btn,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                except Exception:
+                    msg = await bot.send_photo(
+                        chat_id=MOVIE_UPDATE_CHANNEL,
+                        photo=db_movie['tmdb']['poster'],
+                        caption=cap,
+                        reply_markup=btn,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                    await mdb.update_message_id(unique_id, msg.id)
+    except Exception as e:
+        print(f"Batch Processor Error: {e}")
+
+# --- 6. মেইন হ্যান্ডলার (Collector) ---
 @Client.on_message(filters.chat(CHANNELS) & MEDIA_FILTER)
 async def media_handler(bot, message):
     try:
@@ -215,106 +289,38 @@ async def media_handler(bot, message):
         filename = media.file_name
         caption = message.caption or ""
         
-        # ১. অরিজিনাল ডাটাবেসে সেভ (সার্চের জন্য)
+        # ১. অরিজিনাল ডাটাবেসে সেভ (সার্চের জন্য - ইনস্ট্যান্ট)
         success, info = await save_file(media)
         if not success: return 
         
-        # ২. ফাইলের নাম ক্লিন করা
+        # ২. তথ্য বের করা
         clean_name, year = clean_filename(filename)
         quality = get_quality(filename)
         language = get_language(filename + caption)
         
-        # ৩. ইউনিক আইডি তৈরি (নাম + সাল)
-        # যাতে "Movie A (2020)" এবং "Movie A (2024)" আলাদা থাকে
         unique_id = f"{clean_name}_{year}" if year else clean_name
         
-        # লক সিস্টেম: একই মুভি একসাথে প্রসেস হওয়া আটকাবে
-        if unique_id not in PROCESSING_LOCKS:
-            PROCESSING_LOCKS[unique_id] = asyncio.Lock()
+        se_match = SEASON_EPISODE_PATTERN.search(filename)
+        season = int(se_match.group(1)) if se_match else None
+        episode = int(se_match.group(2)) if se_match else None
+        
+        file_data = {
+            "filename": filename,
+            "quality": quality,
+            "language": language,
+            "season": season,
+            "episode": episode
+        }
+        
+        # ৩. ব্যাচিং লজিক
+        # যদি এই মুভিটি কিউতে না থাকে, তবে নতুন কিউ তৈরি করে টাইমার চালু করো
+        if unique_id not in PENDING_QUEUE:
+            PENDING_QUEUE[unique_id] = [file_data]
+            # ব্যাকগ্রাউন্ড টাস্ক চালু করা
+            asyncio.create_task(batch_processor(bot, unique_id, clean_name, year))
+        else:
+            # আর যদি টাইমার চলতে থাকে, তাহলে শুধু ফাইলটা লিস্টে যোগ করে দাও
+            PENDING_QUEUE[unique_id].append(file_data)
             
-        async with PROCESSING_LOCKS[unique_id]:
-            se_match = SEASON_EPISODE_PATTERN.search(filename)
-            season = int(se_match.group(1)) if se_match else None
-            episode = int(se_match.group(2)) if se_match else None
-            
-            # সার্চ স্লাগ
-            search_slug = clean_name.replace(" ", "-")
-            
-            # ৪. ডাটাবেস চেক
-            db_movie = await mdb.get_movie(unique_id)
-            
-            new_file_data = {
-                "filename": filename,
-                "quality": quality,
-                "language": language,
-                "season": season,
-                "episode": episode
-            }
-
-            # --- নতুন মুভি ---
-            if not db_movie:
-                tmdb_data = await fetch_tmdb(clean_name, year)
-                
-                # যদি TMDB তে ডাটা না পাওয়া যায়, তবে ম্যানুয়ালি তৈরি করবে
-                if not tmdb_data: 
-                    tmdb_data = {
-                        "title": clean_name, "rating": "N/A", "genres": "Unknown",
-                        "year": year or "N/A", "plot": "N/A", "poster": DEFAULT_IMAGE_URL, "type": "Movie"
-                    }
-                
-                full_data = {
-                    "_id": unique_id, # এখানে ইউনিক আইডি ব্যবহার হচ্ছে
-                    "tmdb": tmdb_data,
-                    "files": [new_file_data],
-                    "message_id": None
-                }
-                await mdb.add_movie(unique_id, full_data)
-                
-                cap = generate_caption(tmdb_data, [new_file_data])
-                btn = InlineKeyboardMarkup([[InlineKeyboardButton('ɢᴇᴛ ғɪʟᴇs', url=f"https://t.me/{bot.me.username}?start=getfile-{search_slug}")]])
-                
-                msg = await bot.send_photo(
-                    chat_id=MOVIE_UPDATE_CHANNEL,
-                    photo=tmdb_data['poster'],
-                    caption=cap,
-                    reply_markup=btn,
-                    parse_mode=enums.ParseMode.HTML
-                )
-                await mdb.update_message_id(unique_id, msg.id)
-
-            # --- আপডেট (Update) ---
-            else:
-                # ডুপ্লিকেট ফাইল চেক
-                if any(f['filename'] == filename for f in db_movie['files']):
-                    return
-
-                await mdb.update_movie_files(unique_id, new_file_data)
-                
-                # নতুন ডাটা নেওয়া
-                db_movie = await mdb.get_movie(unique_id)
-                cap = generate_caption(db_movie['tmdb'], db_movie['files'])
-                btn = InlineKeyboardMarkup([[InlineKeyboardButton('ɢᴇᴛ ғɪʟᴇs', url=f"https://t.me/{bot.me.username}?start=getfile-{search_slug}")]])
-                
-                # মেসেজ এডিট করার চেষ্টা
-                if db_movie.get('message_id'):
-                    try:
-                        await bot.edit_message_caption(
-                            chat_id=MOVIE_UPDATE_CHANNEL,
-                            message_id=db_movie['message_id'],
-                            caption=cap,
-                            reply_markup=btn,
-                            parse_mode=enums.ParseMode.HTML
-                        )
-                    except Exception:
-                        # এডিট না হলে (যেমন মেসেজ ডিলিট হলে) নতুন করে পোস্ট
-                        msg = await bot.send_photo(
-                            chat_id=MOVIE_UPDATE_CHANNEL,
-                            photo=db_movie['tmdb']['poster'],
-                            caption=cap,
-                            reply_markup=btn,
-                            parse_mode=enums.ParseMode.HTML
-                        )
-                        await mdb.update_message_id(unique_id, msg.id)
-                    
     except Exception as e:
         print(f"Media Handler Error: {e}")
