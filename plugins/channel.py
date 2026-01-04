@@ -18,7 +18,6 @@ BATCH_TIME = 10
 
 # --- 1. রেফারেন্স কোড থেকে নেওয়া কনফিগারেশন এবং লিস্ট ---
 
-# বিশাল ইগনোর লিস্ট (রেফারেন্স কোড থেকে নেওয়া)
 IGNORE_WORDS = {
     "rarbg", "dub", "sub", "sample", "mkv", "aac", "combined",
     "action", "adventure", "animation", "biography", "comedy", "crime", 
@@ -54,7 +53,7 @@ CAPTION_LANGUAGES = {
     "eng": "English", "english": "English", "ben": "Bengali", "bengali": "Bengali"
 }
 
-# Regex Patterns (রেফারেন্স কোড থেকে)
+# Regex Patterns
 CLEAN_PATTERN = re.compile(r'@[^ \n\r\t\.,:;!?()\[\]{}<>\\/"\'=_%]+|\bwww\.[^\s\]\)]+|\([\@^]+\)|\[[\@^]+\]')
 NORMALIZE_PATTERN = re.compile(r"[._]+|[()\[\]{}:;'–!,.?_]")
 QUALITY_PATTERN = re.compile(r"\b(?:HDCam|HDTC|CamRip|TS|TC|TeleSync|DVDScr|DVDRip|PreDVD|WEBRip|WEB-DL|TVRip|HDTV|WEB DL|WebDl|BluRay|BRRip|BDRip|360p|480p|720p|1080p|2160p|4K|1440p|540p|240p|140p|HEVC|HDRip)\b", re.IGNORECASE)
@@ -94,7 +93,7 @@ PENDING_QUEUE = {}
 MEDIA_FILTER = filters.document | filters.video | filters.audio
 DEFAULT_IMAGE_URL = "https://te.legra.ph/file/88d845b4f8a024a71465d.jpg"
 
-# --- 3. হেল্পার ফাংশন (লজিক: রেফারেন্স কোড) ---
+# --- 3. হেল্পার ফাংশন ---
 
 def clean_mentions_links(text: str) -> str:
     return CLEAN_PATTERN.sub("", text or "").strip()
@@ -104,7 +103,6 @@ def normalize(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 def remove_ignored_words(text: str) -> str:
-    # এই ফাংশনটি ফাইলের নাম থেকে সব ফালতু শব্দ ডিলিট করে দেয়
     IGNORE_WORDS_LOWER = {w.lower() for w in IGNORE_WORDS}
     return " ".join(word for word in text.split() if word.lower() not in IGNORE_WORDS_LOWER)
 
@@ -130,48 +128,38 @@ def extract_season_episode(filename: str):
             return season, ep
     return None, None
 
-# --- 🔥 MAIN EXTRACTION LOGIC (Based on Reference Code) ---
 def extract_media_info(filename: str, caption: str):
-    # 1. Basic Cleaning
     filename = normalize(clean_mentions_links(filename).title())
     caption_clean = clean_mentions_links(caption).lower() if caption else ""
-    unified = f"{caption_clean} {filename.lower()}".strip()
-
+    
     season = episode = year = None
     tag = "#MOVIE"
     
-    # 2. Extract Details BEFORE destroying the name
     quality = get_qualities(filename) or get_qualities(caption_clean) or "HD"
     ott_platform = extract_ott_platform(f"{filename} {caption_clean}")
     
     lang_keys = {k for k in CAPTION_LANGUAGES if k in caption_clean or k in filename.lower()}
     language = ", ".join(sorted({CAPTION_LANGUAGES[k] for k in lang_keys})) if lang_keys else "Multi-Audio"
 
-    # 3. Handle Series (Season/Episode)
     season, episode = extract_season_episode(filename)
     processed_raw = filename
     
     if season is not None:
         tag = "#SERIES"
-        # Remove Season/Episode parts from name
         for pattern in (RANGE_REGEX, SINGLE_REGEX, NAMED_REGEX, EP_ONLY_RANGE):
             if m := pattern.search(filename):
                 match_str = m.group(0)
                 start_idx = filename.find(match_str)
-                processed_raw = filename[:start_idx] # Keep only part before S01E01
+                processed_raw = filename[:start_idx] 
                 break
     else:
-        # 4. Handle Movie Year
         if year_match := YEAR_PATTERN.search(filename):
             year = year_match.group(0)
             year_idx = filename.find(year)
-            processed_raw = filename[:year_idx] # Keep part before year
+            processed_raw = filename[:year_idx] 
         
-    # 5. 🔥 THE CLEANING MAGIC: Remove Ignored Words
-    # Normalize again and remove junk words
     base_name = normalize(remove_ignored_words(normalize(processed_raw)))
     
-    # If name becomes too short, use first word
     if len(base_name) < 2:
         base_name = processed_raw.split()[0] if processed_raw else "Unknown"
 
@@ -197,7 +185,6 @@ async def fetch_tmdb(query, year):
                 data = await resp.json()
         
         if not data.get('results'):
-             # Fallback: Try cleaning query more if failed
              clean_query = re.sub(r'[^\w\s]', '', query)
              if clean_query != query and len(clean_query) > 1:
                  return await fetch_tmdb(clean_query, year)
@@ -296,7 +283,7 @@ def generate_caption(data, files_list):
 """
     return caption
 
-# --- 5. ব্যাকগ্রাউন্ড প্রসেসর (Batch Worker) ---
+# --- 5. ব্যাকগ্রাউন্ড প্রসেসর ---
 async def batch_processor(bot, unique_id, clean_name, year):
     await asyncio.sleep(BATCH_TIME)
     
@@ -342,9 +329,11 @@ async def batch_processor(bot, unique_id, clean_name, year):
         else:
             existing_filenames = [f['filename'] for f in db_movie['files']]
             new_files = [f for f in files_to_process if f['filename'] not in existing_filenames]
-            if not new_files: return
-
-            await mdb.update_movie_files(unique_id, new_files)
+            
+            # যদি নতুন ফাইল নাও থাকে, তবুও আমরা পোস্ট আপডেট করার চেষ্টা করব 
+            # (কারণ ইউজার রি-আপলোড করে পোস্ট বাম্প করতে চাইতে পারে)
+            if new_files:
+                await mdb.update_movie_files(unique_id, new_files)
             
             db_movie = await mdb.get_movie(unique_id)
             cap = generate_caption(db_movie['tmdb'], db_movie['files'])
@@ -368,6 +357,17 @@ async def batch_processor(bot, unique_id, clean_name, year):
                         parse_mode=enums.ParseMode.HTML
                     )
                     await mdb.update_message_id(unique_id, msg.id)
+            else:
+                # মেসেজ আইডি না থাকলে নতুন পোস্ট
+                msg = await bot.send_photo(
+                    chat_id=MOVIE_UPDATE_CHANNEL,
+                    photo=db_movie['tmdb']['poster'],
+                    caption=cap,
+                    reply_markup=btn,
+                    parse_mode=enums.ParseMode.HTML
+                )
+                await mdb.update_message_id(unique_id, msg.id)
+
     except Exception as e:
         print(f"Batch Processor Error: {e}")
 
@@ -375,7 +375,6 @@ async def batch_processor(bot, unique_id, clean_name, year):
 @Client.on_message(filters.chat(CHANNELS) & MEDIA_FILTER)
 async def media_handler(bot, message):
     try:
-        # File Type Fix
         for file_type in ("document", "video", "audio"):
             media = getattr(message, file_type, None)
             if media is not None:
@@ -387,11 +386,9 @@ async def media_handler(bot, message):
         media.caption = message.caption or ""
         filename = media.file_name
         
-        # Save to DB
-        success, info = await save_file(media)
-        if not success: return 
+        # Save to DB (Ignoring success value to allow reposts)
+        await save_file(media)
         
-        # 🔥 USE NEW EXTRACTION LOGIC
         info_data = extract_media_info(filename, media.caption)
         
         clean_name = info_data["base_name"]
@@ -406,7 +403,6 @@ async def media_handler(bot, message):
             "episode": info_data["episode"]
         }
         
-        # Batching Logic
         if unique_id not in PENDING_QUEUE:
             PENDING_QUEUE[unique_id] = [file_data]
             asyncio.create_task(batch_processor(bot, unique_id, clean_name, year))
