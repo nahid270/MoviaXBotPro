@@ -18,11 +18,16 @@ from database.ia_filterdb import save_file
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ParseMode
 
-CAPTION_LANGUAGES = ["Bhojpuri", "Hindi", "Bengali", "Tamil", "English", "Bangla", "Telugu", "Malayalam", "Kannada", "Marathi", "Punjabi", "Bengoli", "Gujrati", "Korean", "Gujarati", "Spanish", "French", "German", "Chinese", "Arabic", "Portuguese", "Russian", "Japanese", "Odia", "Assamese", "Urdu"]
+# ====================================================================
+# TMDB কনফিগারেশন (আপনার info.py তে হাত দেওয়ার দরকার নেই)
+# আপনি চাইলে নিজের API KEY এখানে বসাতে পারেন
+TMDB_API_KEY = "7dc544d9253bccc3cfecc1c677f69819" 
+# ====================================================================
+
+CAPTION_LANGUAGES = ["Bhojpuri", "Hindi", "Bengali", "Tamil", "English", "Bangla", "Telugu", "Malayalam", "Kannada", "Marathi", "Punjabi", "Gujrati", "Korean", "Spanish", "French", "Urdu"]
 
 DEFAULT_IMAGE_URL = "https://te.legra.ph/file/88d845b4f8a024a71465d.jpg"
 
-# === আপনার পছন্দের মডার্ন টেমপ্লেট ===
 SILENTX_PREMIUM_UPDATE = """
 <b>⚡️ ℕ𝔼𝕎 ℙℝ𝔼𝕄𝕀𝕌𝕄 𝔸ℝℝ𝕀𝕍𝔼𝔻 ⚡️</b>
 
@@ -55,6 +60,7 @@ async def media(bot, message):
             break
     else:
         return
+    
     media.file_type = file_type
     media.caption = message.caption
     
@@ -62,63 +68,128 @@ async def media(bot, message):
     success, silentxbotz = await save_file(media)
     
     try:  
-        # পোস্ট পাঠানোর লজিক
         if success and silentxbotz == 1: 
-            # get_status চেক যদি দরকার হয় তবে এখানে যোগ করতে পারেন, 
-            # আপাতত ডাইরেক্ট আপডেট কল করছি যাতে পোস্ট মিস না হয়।
+            # ফাইল প্রসেসিং এর জন্য পাঠানো
             await send_movie_update(bot, file_name=media.file_name, caption=media.caption)
     except Exception as e:
         LOGGER.error(f"Error In Media Handler: {e}")
         pass
 
+# --- উন্নত নাম ক্লিনিং ফাংশন ---
+def parse_filename(filename):
+    # কমন ফালতু শব্দ রিমুভ করা
+    filename = filename.replace("_", " ").replace(".", " ")
+    tags = [
+        r"1080p", r"720p", r"480p", r"360p", r"2160p", r"4k", r"5k", r"8k", r"HDRip", 
+        r"WEB-DL", r"BluRay", r"ESub", r"Dual Audio", r"H\.?264", r"H\.?265", r"HEVC", 
+        r"10bit", r"x264", r"x265", r"AAC", r"Esub", r"Sub", r"mkv", r"mp4", r"avi",
+        r"Hindi", r"English", r"Bengali", r"Tamil", r"Telugu", r"Kannada", r"Malayalam"
+    ]
+    
+    clean_name = filename
+    # ব্র্যাকেটের ভেতরের জিনিস রিমুভ (যেমন [Quality] বা (2024))
+    # তবে সালটা রেখে দেওয়ার চেষ্টা করবো
+    
+    # সাল খোঁজা (1970-2030)
+    year_match = re.search(r'\b(19|20)\d{2}\b', filename)
+    year = year_match.group(0) if year_match else None
+    
+    # সাল পেলে সালের পরের সব অংশ কেটে ফেলা ভালো (বেশিরভাগ ক্ষেত্রে)
+    if year:
+        clean_name = filename.split(year)[0]
+    
+    # ট্যাগগুলো রিমুভ করা
+    for tag in tags:
+        clean_name = re.sub(tag, "", clean_name, flags=re.IGNORECASE)
+    
+    # অপ্রয়োজনীয় ক্যারেক্টার রিমুভ
+    clean_name = re.sub(r"[^\w\s]", "", clean_name)
+    clean_name = re.sub(r"\s+", " ", clean_name).strip()
+    
+    return clean_name, year
+
+# --- TMDB ডাটা ফেচিং ফাংশন ---
+async def fetch_tmdb_data(query, year=None):
+    try:
+        if not query:
+            return None
+            
+        search_url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={query}&include_adult=true"
+        if year:
+            search_url += f"&year={year}"
+            
+        async with aiohttp.ClientSession() as session:
+            async with session.get(search_url) as resp:
+                data = await resp.json()
+                
+        if not data.get("results"):
+            return None
+            
+        # প্রথম রেজাল্ট নেওয়া
+        result = data["results"][0]
+        media_type = result.get("media_type", "movie")
+        media_id = result.get("id")
+        
+        # ডিটেইলস আনা (Genre, Director এর জন্য)
+        details_url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={TMDB_API_KEY}&append_to_response=credits,videos"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(details_url) as resp:
+                details = await resp.json()
+                
+        # প্রয়োজনীয় তথ্য সাজানো
+        director = "N/A"
+        if "credits" in details:
+            crew = details["credits"].get("crew", [])
+            directors = [member["name"] for member in crew if member["job"] == "Director"]
+            if directors:
+                director = directors[0]
+                
+        genres = [g["name"] for g in details.get("genres", [])]
+        
+        return {
+            "title": details.get("title") or details.get("name"),
+            "original_title": details.get("original_title") or details.get("original_name"),
+            "kind": "Movie" if media_type == "movie" else "Series",
+            "poster_path": details.get("poster_path"),
+            "backdrop_path": details.get("backdrop_path"),
+            "release_date": details.get("release_date") or details.get("first_air_date"),
+            "vote_average": round(details.get("vote_average", 0), 1),
+            "vote_count": details.get("vote_count", 0),
+            "overview": details.get("overview"),
+            "director": director,
+            "genres": genres,
+            "videos": details.get("videos", {}).get("results", [])
+        }
+        
+    except Exception as e:
+        LOGGER.error(f"TMDB Fetch Error: {e}")
+        return None
+
 async def send_movie_update(bot, file_name, caption):
     try:
-        # === ১. নাম ক্লিনিং লজিক (যাতে সঠিক মুভি আসে) ===
-        # ফাইলের নাম থেকে ডট, আন্ডারস্কোর সরিয়ে স্পেস দেওয়া
-        clean_name = re.sub(r"[._-]", " ", file_name)
-        # ব্র্যাকেটের ভেতরের লেখা রিমুভ করা
-        clean_name = re.sub(r"\[.*?\]|\(.*?\)", "", clean_name)
+        # ১. নাম ও সাল আলাদা করা
+        search_query, year = parse_filename(file_name)
         
-        # সাল (Year) খোঁজা
-        year_match = re.findall(r"\b(19|20)\d{2}\b", clean_name)
-        year = None
-        if year_match:
-            year = year_match[-1] # শেষের সালটা নেওয়া (যেমন: Movie Name 2025 returns 2025)
-        
-        # সার্চ কুয়েরি তৈরি
-        if year:
-            # সাল পেলে, সালের আগের অংশটুকু নাম হিসেবে নেব
-            search_query = clean_name.split(year)[0].strip()
-        else:
-            # সাল না পেলে ফালতু শব্দগুলো রিমুভ করব
-            junk_words = [
-                "1080p", "720p", "480p", "360p", "2160p", "4k", "5k", "8k", "hdr",
-                "hdrip", "dvdrip", "web-dl", "webdl", "bluray", "remux", "h264",
-                "x264", "h265", "x265", "hevc", "10bit", "dual audio", "multi audio",
-                "hindi", "english", "bengali", "esub", "sub", "mkv", "mp4", "avi"
-            ]
-            temp_name = clean_name.lower()
-            for junk in junk_words:
-                temp_name = temp_name.replace(junk, "")
-            search_query = temp_name.strip()
-
-        # নাম খুব ছোট হয়ে গেলে অরিজিনাল নাম ব্যবহার করা
         if len(search_query) < 2:
-            search_query = clean_name
-
-        # ডুপ্লিকেট চেক
+            search_query = file_name # যদি ক্লিনিং এর পর নাম খুব ছোট হয়ে যায়
+        
+        # ডুপ্লিকেট চেক (মেমোরিতে)
         if file_name in notified_movies:
             return 
-            
-        # === ২. TMDB ডাটা ফেচ (সঠিক নাম দিয়ে) ===
+
+        # ২. TMDB থেকে ডাটা আনা
         tmdb_data = await fetch_tmdb_data(search_query, year)
         
-        if not tmdb_data:
-            return          
-        
+        # যদি TMDB তে ডাটা না পাওয়া যায়, তবুও পোস্ট করার চেষ্টা করবো (Optional)
+        # আপনি যদি চান ডাটা না পেলে পোস্ট হবে না, তাহলে নিচের লাইন আনকমেন্ট করুন
+        if not tmdb_data: 
+             LOGGER.info(f"No TMDB data found for: {search_query}")
+             return 
+
         notified_movies.add(file_name)
         
-        # লিংকের জন্য স্লাগ তৈরি
+        # লিংক তৈরির জন্য নাম ফরম্যাট
         search_movie = search_query.replace(" ", "-")
 
         # অন্যান্য তথ্য
@@ -149,38 +220,36 @@ def get_trailer_button(tmdb_data: Dict) -> list:
     videos = tmdb_data.get("videos", [])
     if not isinstance(videos, list): videos = []
     yt_videos = [v for v in videos if "youtube" in str(v.get("url", "")).lower() or v.get("site") == "YouTube"]    
+    
+    url = None
     if yt_videos:
         key = yt_videos[0].get("key")
-        url = yt_videos[0].get("url")
-        final_url = url if url else f"https://www.youtube.com/watch?v={key}"
-        return [InlineKeyboardButton("▶️ Watch Trailer", url=final_url)]
+        site_url = yt_videos[0].get("url")
+        if site_url:
+            url = site_url
+        elif key:
+            url = f"https://www.youtube.com/watch?v={key}"
+            
+    if url:
+        return [InlineKeyboardButton("▶️ Watch Trailer", url=url)]
     return []
     
 async def send_with_visual(bot, caption: str, tmdb_data: Dict, search_movie):
     try:
-        # === ৩. পোস্টার লজিক (ভার্টিক্যাল/লম্বা ছবি) ===
         poster_path = tmdb_data.get("poster_path")
         backdrop_path = tmdb_data.get("backdrop_path")
         
-        visual_url = None
-        # আগে পোস্টার দেখবে
+        visual_url = DEFAULT_IMAGE_URL
         if poster_path:
-            visual_url = f"https://image.tmdb.org/t/p/original{poster_path}"
-        # না পেলে ব্যাকড্রপ
+            visual_url = f"https://image.tmdb.org/t/p/w500{poster_path}" # w500 is faster than original
         elif backdrop_path:
-            visual_url = f"https://image.tmdb.org/t/p/original{backdrop_path}"
-        # তাও না পেলে ডিফল্ট বা অন্য মেথড
-        else:
-             try:
-                 visual_url = await get_best_visual(tmdb_data)
-             except:
-                 visual_url = DEFAULT_IMAGE_URL
+            visual_url = f"https://image.tmdb.org/t/p/w780{backdrop_path}"
 
-        # ইউজারনেম সেফটি চেক
+        # ইউজারনেম সেফটি
         try:
-            bot_username = temp.U_NAME
-        except:
             bot_username = bot.me.username
+        except:
+            bot_username = "TGLinkBase" # Fallback
 
         get_file = f'https://telegram.me/{bot_username}?start=getfile-{search_movie}'
         
@@ -193,27 +262,21 @@ async def send_with_visual(bot, caption: str, tmdb_data: Dict, search_movie):
             
         keyboard = InlineKeyboardMarkup(buttons)
         
+        # ছবি ডাউনলোড করে পাঠানো (যাতে টেলিগ্রাম সার্ভারে ক্যাশ থাকে)
         if visual_url and visual_url != DEFAULT_IMAGE_URL:
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(visual_url, timeout=aiohttp.ClientTimeout(total=20)) as img_resp:
-                        if img_resp.status == 200:
-                            img_bytes = await img_resp.read()
-                            photo_file = io.BytesIO(img_bytes)
-                            photo_file.name = await generate_premium_filename(tmdb_data.get("title", "image"))
-                            
-                            await bot.send_photo(
-                                chat_id=MOVIE_UPDATE_CHANNEL, 
-                                photo=photo_file, 
-                                caption=caption,
-                                parse_mode=ParseMode.HTML,
-                                reply_markup=keyboard
-                            )
-                            return
+                await bot.send_photo(
+                    chat_id=MOVIE_UPDATE_CHANNEL, 
+                    photo=visual_url, 
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=keyboard
+                )
+                return
             except Exception as e:
-                LOGGER.error(f"Image Download Failed: {e}")
+                LOGGER.error(f"Primary Image Failed: {e}")
 
-        # ডিফল্ট ইমেজ পাঠানো (যদি উপরেরটা ফেইল করে)
+        # প্রাইমারি ফেইল করলে ডিফল্ট
         await bot.send_photo(
             chat_id=MOVIE_UPDATE_CHANNEL,
             photo=DEFAULT_IMAGE_URL,
@@ -224,21 +287,7 @@ async def send_with_visual(bot, caption: str, tmdb_data: Dict, search_movie):
     except Exception as e:
         LOGGER.error(f"Visual Send Error: {e}")
 
-async def generate_premium_filename(title: str, extension=".jpg") -> str:
-    clean_title = re.sub(r'[^\w\s-]', '', str(title))[:20].strip().replace(" ", "_")
-    timestamp = datetime.now().strftime("%y%m%d%H%M")
-    unique_id = hashlib.md5(str(title).encode()).hexdigest()[:6]
-    return f"silentx_{clean_title}_{timestamp}_{unique_id}{extension}"
-
 async def get_languages(text: str) -> str:
     if not text: return "Multi-Audio"
     found_langs = [lang for lang in CAPTION_LANGUAGES if lang.lower().replace(" ", "") in text.lower().replace(" ", "")]
     return ", ".join(found_langs[:2]) if found_langs else "Multi-Audio"
-
-async def get_qualities(text): 
-    qualities = ["ORG", "org", "hdcam", "HDCAM", "HQ", "hq", "HDRip", "hdrip", "camrip", "WEB-DL", "CAMRip", "hdtc", "predvd", "DVDscr", "dvdscr", "dvdrip", "HDTC", "dvdscreen", "HDTS", "hdts"]
-    return ", ".join([q for q in qualities if q.lower() in text.lower()])
-
-async def get_pixels(caption):
-    pixels = ["480p", "480p HEVC", "720p", "720p HEVC", "1080p", "1080p HEVC", "2160p", "2K", "4K"]
-    return ", ".join([p for p in pixels if p.lower() in caption.lower()])
