@@ -16,7 +16,7 @@ TMDB_API_KEY = "7dc544d9253bccc3cfecc1c677f69819"
 BATCH_TIME = 10 
 # ====================================================================
 
-# --- 1. রেফারেন্স কোড থেকে নেওয়া কনফিগারেশন এবং লিস্ট ---
+# --- 1. কনফিগারেশন এবং ইগনোর লিস্ট ---
 
 IGNORE_WORDS = {
     "rarbg", "dub", "sub", "sample", "mkv", "aac", "combined",
@@ -221,6 +221,17 @@ async def fetch_tmdb(query, year):
         print(f"TMDB Error: {e}")
         return None
 
+# --- 🔥 FIX: SAFE SORT KEY ---
+def get_ep_sort_key(ep):
+    try:
+        return int(ep)
+    except:
+        try:
+            # যদি "1-8" হয় তবে প্রথম সংখ্যাটি (1) রিটার্ন করবে
+            return int(str(ep).split('-')[0])
+        except:
+            return 0
+
 def generate_caption(data, files_list):
     seasons = {}
     qualities = set()
@@ -239,26 +250,40 @@ def generate_caption(data, files_list):
     epi_text = ""
     if seasons:
         for s in sorted(seasons.keys()):
-            eps = sorted(list(set(seasons[s])), key=int)
+            # এখানে ক্র্যাশ হচ্ছিল, তাই কাস্টম sort key ব্যবহার করা হয়েছে
+            eps_list = list(set(seasons[s]))
+            eps_list.sort(key=get_ep_sort_key)
+            
             ep_display = []
             
-            if len(eps) > 1:
-                start = eps[0]
-                end = eps[0]
-                range_str = []
-                for i in range(1, len(eps)):
-                    if eps[i] == end + 1:
-                        end = eps[i]
+            # সিঙ্গেল এপিসোড এবং রেঞ্জ আলাদা করা
+            singles = []
+            ranges = []
+            
+            for ep in eps_list:
+                try:
+                    singles.append(int(ep))
+                except:
+                    ranges.append(str(ep))
+            
+            # সিঙ্গেল এপিসোডগুলো স্মার্টলি গ্রুপ করা (1,2,3 -> 1-3)
+            if singles:
+                singles.sort()
+                start = singles[0]
+                end = singles[0]
+                for i in range(1, len(singles)):
+                    if singles[i] == end + 1:
+                        end = singles[i]
                     else:
-                        if start == end: range_str.append(str(start))
-                        else: range_str.append(f"{start}-{end}")
-                        start = end = eps[i]
-                if start == end: range_str.append(str(start))
-                else: range_str.append(f"{start}-{end}")
-                ep_display = range_str
-            else:
-                ep_display.append(str(eps[0]))
-                
+                        if start == end: ep_display.append(str(start))
+                        else: ep_display.append(f"{start}-{end}")
+                        start = end = singles[i]
+                if start == end: ep_display.append(str(start))
+                else: ep_display.append(f"{start}-{end}")
+            
+            # রেঞ্জগুলো (যেমন "1-8") যোগ করে দেওয়া
+            ep_display.extend(ranges)
+            
             epi_text += f"\n┠ 📺 <b>Season {s}:</b> Ep {', '.join(ep_display)}"
 
     caption = f"""
@@ -330,8 +355,6 @@ async def batch_processor(bot, unique_id, clean_name, year):
             existing_filenames = [f['filename'] for f in db_movie['files']]
             new_files = [f for f in files_to_process if f['filename'] not in existing_filenames]
             
-            # যদি নতুন ফাইল নাও থাকে, তবুও আমরা পোস্ট আপডেট করার চেষ্টা করব 
-            # (কারণ ইউজার রি-আপলোড করে পোস্ট বাম্প করতে চাইতে পারে)
             if new_files:
                 await mdb.update_movie_files(unique_id, new_files)
             
@@ -358,7 +381,6 @@ async def batch_processor(bot, unique_id, clean_name, year):
                     )
                     await mdb.update_message_id(unique_id, msg.id)
             else:
-                # মেসেজ আইডি না থাকলে নতুন পোস্ট
                 msg = await bot.send_photo(
                     chat_id=MOVIE_UPDATE_CHANNEL,
                     photo=db_movie['tmdb']['poster'],
@@ -386,7 +408,7 @@ async def media_handler(bot, message):
         media.caption = message.caption or ""
         filename = media.file_name
         
-        # Save to DB (Ignoring success value to allow reposts)
+        # Save to DB
         await save_file(media)
         
         info_data = extract_media_info(filename, media.caption)
