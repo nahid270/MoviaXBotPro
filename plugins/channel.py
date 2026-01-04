@@ -30,7 +30,6 @@ class MovieUpdateDB:
         await self.col.insert_one(data)
 
     async def update_movie_files(self, unique_id, new_files_list):
-        # একসাথে অনেকগুলো ফাইল লিস্টে পুশ করা
         await self.col.update_one(
             {"_id": unique_id},
             {"$push": {"files": {"$each": new_files_list}}}
@@ -228,7 +227,7 @@ async def batch_processor(bot, unique_id, clean_name, year):
             full_data = {
                 "_id": unique_id,
                 "tmdb": tmdb_data,
-                "files": files_to_process, # সব ফাইল একসাথে
+                "files": files_to_process, 
                 "message_id": None
             }
             await mdb.add_movie(unique_id, full_data)
@@ -247,7 +246,6 @@ async def batch_processor(bot, unique_id, clean_name, year):
             
         # --- আপডেট মুভি ---
         else:
-            # শুধু নতুন ইউনিক ফাইলগুলো ফিল্টার করা
             existing_filenames = [f['filename'] for f in db_movie['files']]
             new_files = [f for f in files_to_process if f['filename'] not in existing_filenames]
             
@@ -255,7 +253,6 @@ async def batch_processor(bot, unique_id, clean_name, year):
 
             await mdb.update_movie_files(unique_id, new_files)
             
-            # ডাটাবেস থেকে ফ্রেশ ডাটা আনা
             db_movie = await mdb.get_movie(unique_id)
             cap = generate_caption(db_movie['tmdb'], db_movie['files'])
             btn = InlineKeyboardMarkup([[InlineKeyboardButton('ɢᴇᴛ ғɪʟᴇs', url=f"https://t.me/{bot.me.username}?start=getfile-{search_slug}")]])
@@ -285,9 +282,20 @@ async def batch_processor(bot, unique_id, clean_name, year):
 @Client.on_message(filters.chat(CHANNELS) & MEDIA_FILTER)
 async def media_handler(bot, message):
     try:
-        media = getattr(message, message.media.value)
+        # --- ফিক্স করা অংশ ---
+        # সঠিকভাবে মিডিয়া অবজেক্ট বের করা এবং file_type সেট করা
+        for file_type in ("document", "video", "audio"):
+            media = getattr(message, file_type, None)
+            if media is not None:
+                break
+        else:
+            return
+
+        media.file_type = file_type # এই লাইনটি save_file এর জন্য জরুরি
+        media.caption = message.caption or ""
+        # ---------------------
+
         filename = media.file_name
-        caption = message.caption or ""
         
         # ১. অরিজিনাল ডাটাবেসে সেভ (সার্চের জন্য - ইনস্ট্যান্ট)
         success, info = await save_file(media)
@@ -296,7 +304,7 @@ async def media_handler(bot, message):
         # ২. তথ্য বের করা
         clean_name, year = clean_filename(filename)
         quality = get_quality(filename)
-        language = get_language(filename + caption)
+        language = get_language(filename + media.caption)
         
         unique_id = f"{clean_name}_{year}" if year else clean_name
         
@@ -313,13 +321,10 @@ async def media_handler(bot, message):
         }
         
         # ৩. ব্যাচিং লজিক
-        # যদি এই মুভিটি কিউতে না থাকে, তবে নতুন কিউ তৈরি করে টাইমার চালু করো
         if unique_id not in PENDING_QUEUE:
             PENDING_QUEUE[unique_id] = [file_data]
-            # ব্যাকগ্রাউন্ড টাস্ক চালু করা
             asyncio.create_task(batch_processor(bot, unique_id, clean_name, year))
         else:
-            # আর যদি টাইমার চলতে থাকে, তাহলে শুধু ফাইলটা লিস্টে যোগ করে দাও
             PENDING_QUEUE[unique_id].append(file_data)
             
     except Exception as e:
