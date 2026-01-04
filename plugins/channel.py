@@ -12,7 +12,7 @@ from utils import temp
 # ====================================================================
 # 🔥 TMDB API KEY
 TMDB_API_KEY = "7dc544d9253bccc3cfecc1c677f69819"
-# ⏳ কত সেকেন্ড অপেক্ষা করবে? (ডিফল্ট ১০ সেকেন্ড)
+# ⏳ ব্যাচিং টাইম (১০ সেকেন্ড)
 BATCH_TIME = 10 
 # ====================================================================
 
@@ -43,11 +43,9 @@ class MovieUpdateDB:
 
 mdb = MovieUpdateDB(DATABASE_URI, DATABASE_NAME)
 
-# --- 2. সেটিংস এবং ব্যাচিং ভেরিয়েবল ---
+# --- 2. সেটিংস এবং ভেরিয়েবল ---
 MEDIA_FILTER = filters.document | filters.video | filters.audio
 DEFAULT_IMAGE_URL = "https://te.legra.ph/file/88d845b4f8a024a71465d.jpg"
-
-# ব্যাচ প্রসেসিং এর জন্য ডিকশনারি
 PENDING_QUEUE = {} 
 
 CAPTION_LANGUAGES = {
@@ -60,29 +58,61 @@ CAPTION_LANGUAGES = {
 QUALITY_PATTERN = re.compile(r"\b(?:480p|720p|1080p|2160p|4k|5k|8k|10bit|HDRip|WEB-DL|Bluray|HEVC|H264|H265)\b", re.IGNORECASE)
 SEASON_EPISODE_PATTERN = re.compile(r'(?:S|Season)\s*(\d+).*?(?:E|Episode|Ep)\s*(\d+)', re.IGNORECASE)
 YEAR_PATTERN = re.compile(r'\b(19|20)\d{2}\b')
-JUNK_PATTERN = re.compile(r'[._]')
 
-# --- 3. হেল্পার ফাংশন ---
+# --- 3. 🔥 সুপার অ্যাডভান্সড নাম ক্লিনিং (OTT + Junk Removal) ---
 def clean_filename(name):
-    clean = JUNK_PATTERN.sub(" ", name)
-    clean = re.sub(r'\[.*?\]|\(.*?\)', '', clean)
-    
-    year_match = YEAR_PATTERN.search(clean)
+    # ১. ব্র্যাকেটের ভেতরের সব লেখা রিমুভ (শুরুতেই)
+    # [Netflix] বা (Official) বা {Link} সব উড়ে যাবে
+    name = re.sub(r'\[.*?\]', '', name)
+    name = re.sub(r'\(.*?\)', '', name)
+    name = re.sub(r'\{.*?\}', '', name)
+
+    # ২. সাল (Year) খুঁজে বের করা
+    year_match = YEAR_PATTERN.search(name)
     year = year_match.group(0) if year_match else None
-    
+
+    # ৩. সালের পরের সব অংশ বাদ দিয়ে দেওয়া
     if year:
-        clean = clean.split(year)[0]
-    
+        name = name.split(year)[0]
+
+    # ৪. ডট, আন্ডারস্কোর এবং হাইফেন স্পেস দিয়ে রিপ্লেস করা
+    name = name.replace(".", " ").replace("_", " ").replace("-", " ")
+
+    # ৫. 🚫 অটিটি (OTT) এবং ফালতু শব্দের লিস্ট
     junk_words = [
-        "1080p", "720p", "480p", "360p", "web-dl", "webdl", "bluray", "mkv", "mp4", "avi",
-        "hindi", "english", "dual", "audio", "sub", "esub", "x264", "x265", "hevc", "10bit",
-        "org", "hdcam", "hdtc", "camrip", "dvdscr", "rip", "unknown", "sample"
-    ]
-    for junk in junk_words:
-        clean = re.sub(r'\b' + junk + r'\b', '', clean, flags=re.IGNORECASE)
+        # OTT Platforms
+        "netflix", "nf", "amzn", "amazon", "prime", "disney", "hotstar", "hulu", 
+        "hbo", "max", "apple", "atvp", "sony", "sonyliv", "zee5", "jiocinema", "jio", 
+        "hoichoi", "chorki", "bioscope", "toffee", "voot", "altbalaji", "klikkk", 
+        "ullu", "kooku", "neulion",
         
-    clean = re.sub(r'\s+', ' ', clean).strip()
-    return clean, year
+        # Resolutions & Quality
+        "1080p", "720p", "480p", "360p", "2160p", "4k", "5k", "8k", "sd", "hd", "fhd", "uhd",
+        "web-dl", "webdl", "bluray", "hdrip", "rip", "camrip", "dvdscr", "hdtc", "dvdrip", "bdrip",
+        
+        # Codecs & Formats
+        "hevc", "x264", "x265", "h264", "h265", "10bit", "60fps", "120fps", "hdr", "sdr",
+        "mkv", "mp4", "avi", "flv", "mov", "aac", "ac3", "dd5.1", "dd+", "atmos",
+        
+        # Audio & Languages
+        "hindi", "english", "dual", "multi", "audio", "sub", "esub", "dubbed", "tam", "tel", "mal",
+        
+        # Misc Junk
+        "p-23", "org", "sample", "unknown", "download", "link", "official", "original", "part", "vol"
+    ]
+    
+    # ৬. লুপ চালিয়ে শব্দগুলো রিমুভ করা
+    for junk in junk_words:
+        name = re.sub(r'\b' + junk + r'\b', '', name, flags=re.IGNORECASE)
+
+    # ৭. ক্লিন করার পর অতিরিক্ত স্পেস রিমুভ
+    clean_name = re.sub(r'\s+', ' ', name).strip()
+
+    # ৮. যদি নাম খুব ছোট হয়ে যায়, তবে ব্যাকআপ হিসেবে প্রথম শব্দটি রাখা
+    if len(clean_name) < 2:
+        clean_name = name.split()[0] if name else "Unknown"
+
+    return clean_name, year
 
 def get_quality(name):
     match = QUALITY_PATTERN.findall(name)
@@ -99,6 +129,7 @@ def get_language(name):
 # --- 4. TMDB এবং ক্যাপশন ---
 async def fetch_tmdb(query, year):
     try:
+        query = query.strip()
         url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={query}"
         if year: url += f"&year={year}"
         
@@ -106,7 +137,12 @@ async def fetch_tmdb(query, year):
             async with session.get(url) as resp:
                 data = await resp.json()
         
-        if not data.get('results'): return None
+        # যদি প্রথম বারে না পায়, স্পেশাল ক্যারেক্টার বাদ দিয়ে আবার চেষ্টা করবে
+        if not data.get('results'): 
+            clean_query = re.sub(r'[^\w\s]', '', query)
+            if clean_query != query and len(clean_query) > 1:
+                return await fetch_tmdb(clean_query, year)
+            return None
         
         res = data['results'][0]
         m_id = res['id']
@@ -201,11 +237,10 @@ def generate_caption(data, files_list):
 """
     return caption
 
-# --- 5. ব্যাকগ্রাউন্ড প্রসেসর (Worker) ---
+# --- 5. ব্যাকগ্রাউন্ড প্রসেসর ---
 async def batch_processor(bot, unique_id, clean_name, year):
-    await asyncio.sleep(BATCH_TIME) # ১০ সেকেন্ড অপেক্ষা
+    await asyncio.sleep(BATCH_TIME) 
     
-    # কিউ থেকে ফাইলগুলো বের করা
     if unique_id not in PENDING_QUEUE:
         return
         
@@ -215,7 +250,6 @@ async def batch_processor(bot, unique_id, clean_name, year):
         search_slug = clean_name.replace(" ", "-")
         db_movie = await mdb.get_movie(unique_id)
         
-        # --- নতুন মুভি ---
         if not db_movie:
             tmdb_data = await fetch_tmdb(clean_name, year)
             if not tmdb_data: 
@@ -244,7 +278,6 @@ async def batch_processor(bot, unique_id, clean_name, year):
             )
             await mdb.update_message_id(unique_id, msg.id)
             
-        # --- আপডেট মুভি ---
         else:
             existing_filenames = [f['filename'] for f in db_movie['files']]
             new_files = [f for f in files_to_process if f['filename'] not in existing_filenames]
@@ -278,12 +311,10 @@ async def batch_processor(bot, unique_id, clean_name, year):
     except Exception as e:
         print(f"Batch Processor Error: {e}")
 
-# --- 6. মেইন হ্যান্ডলার (Collector) ---
+# --- 6. মেইন হ্যান্ডলার ---
 @Client.on_message(filters.chat(CHANNELS) & MEDIA_FILTER)
 async def media_handler(bot, message):
     try:
-        # --- ফিক্স করা অংশ ---
-        # সঠিকভাবে মিডিয়া অবজেক্ট বের করা এবং file_type সেট করা
         for file_type in ("document", "video", "audio"):
             media = getattr(message, file_type, None)
             if media is not None:
@@ -291,17 +322,15 @@ async def media_handler(bot, message):
         else:
             return
 
-        media.file_type = file_type # এই লাইনটি save_file এর জন্য জরুরি
+        media.file_type = file_type 
         media.caption = message.caption or ""
-        # ---------------------
 
         filename = media.file_name
         
-        # ১. অরিজিনাল ডাটাবেসে সেভ (সার্চের জন্য - ইনস্ট্যান্ট)
         success, info = await save_file(media)
         if not success: return 
         
-        # ২. তথ্য বের করা
+        # ক্লিনিং কল করা
         clean_name, year = clean_filename(filename)
         quality = get_quality(filename)
         language = get_language(filename + media.caption)
@@ -320,7 +349,6 @@ async def media_handler(bot, message):
             "episode": episode
         }
         
-        # ৩. ব্যাচিং লজিক
         if unique_id not in PENDING_QUEUE:
             PENDING_QUEUE[unique_id] = [file_data]
             asyncio.create_task(batch_processor(bot, unique_id, clean_name, year))
