@@ -292,10 +292,13 @@ async def list_chats(bot, message):
     chats = await db.get_all_chats()
     out = "Chats Saved In DB Are:\n\n"
     async for chat in chats:
-        # এখানে পরিবর্তন করা হয়েছে যাতে টাইটেল না থাকলে এরর না দেয়
+        # Title না থাকলে Unknown Group দেখাবে
         chat_title = chat.get('title', 'Unknown Group')
         out += f"**Title:** `{chat_title}`\n**- ID:** `{chat['id']}`"
-        if chat['chat_status']['is_disabled']:
+        
+        # Chat Status না থাকলে False ধরে নেবে
+        chat_status = chat.get('chat_status', {})
+        if chat_status.get('is_disabled'):
             out += '( Disabled Chat )'
         out += '\n'
     try:
