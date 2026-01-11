@@ -413,7 +413,25 @@ async def advantage_spoll_choker(bot, query):
         reqstr1 = query.from_user.id if query.from_user else 0
         reqstr = await bot.get_users(reqstr1)
         if NO_RESULTS_MSG:
-            await bot.send_message(chat_id=BIN_CHANNEL,text=script.NORSLTS.format(reqstr.id, reqstr.mention, movie))
+            # অ্যাডমিনদের জন্য বাটন তৈরি
+            btn = [
+                [InlineKeyboardButton("📝 ᴀᴅᴍɪɴ ᴏᴘᴛɪᴏɴꜱ (ʀᴇᴘʟʏ) 📝", callback_data=f"show_option#{reqstr.id}")],
+                [InlineKeyboardButton("👤 ᴠɪᴇᴡ ᴜꜱᴇʀ ᴘʀᴏꜰɪʟᴇ", url=f"tg://user?id={reqstr.id}")]
+            ]
+            
+            # সুন্দর মেসেজ পাঠানো
+            await bot.send_message(
+                chat_id=BIN_CHANNEL,
+                text=(
+                    f"<b>⚠️ Nᴏ Rᴇsᴜʟᴛs Fᴏᴜɴᴅ (Log) ⚠️</b>\n\n"
+                    f"<b>👤 ʀᴇǫᴜᴇsᴛᴇᴅ ʙʏ:</b> {reqstr.mention} (`{reqstr.id}`)\n"
+                    f"<b>🎬 ʀᴇǫᴜᴇsᴛ:</b> <code>{movie}</code>\n\n"
+                    f"<i>👮‍♂️ Admins, click 'Admin Options' below to reply to the user about this request.</i>"
+                ),
+                reply_markup=InlineKeyboardMarkup(btn),
+                disable_web_page_preview=True
+            )
+
         contact_admin_button = InlineKeyboardMarkup(
             [[InlineKeyboardButton("🔰 Cʟɪᴄᴋ ʜᴇʀᴇ & ʀᴇǫᴜᴇsᴛ ᴛᴏ ᴀᴅᴍɪɴ🔰", url=OWNER_LNK)]])
         try:
