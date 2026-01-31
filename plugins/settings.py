@@ -522,8 +522,11 @@ async def shortener_menu_handler(client, query):
     suffix = "" if num == "1" else f"_{'two' if num == '2' else 'three'}"
     current_url = settings.get(f'shortner{suffix}')
     current_api = settings.get(f'api{suffix}')
+    
+    url_text = current_url if current_url else "ɴᴏᴛ ꜱᴇᴛ"
+    api_text = current_api if current_api else "ɴᴏᴛ ꜱᴇᴛ"
 
-    text = f"<b>ꜱʜᴏʀᴛᴇɴᴇʀ {num} ꜱᴇᴛᴛɪɴɢꜱ:</b>\n\n🌐 ᴅᴏᴍᴀɪɴ: {current_url or 'ɴᴏᴛ ꜱᴇᴛ'}\n🔗 ᴀᴘɪ: {current_api or 'ɴᴏᴛ ꜱᴇᴛ'}"
+    text = f"<b>ꜱʜᴏʀᴛᴇɴᴇʀ {num} ꜱᴇᴛᴛɪɴɢꜱ:</b>\n\n🌐 ᴅᴏᴍᴀɪɴ: {url_text}\n🔗 ᴀᴘɪ: {api_text}"
 
     set_text = "ꜱᴇᴛ"
 
@@ -565,17 +568,22 @@ async def set_shortener(client, query):
         return await query.answer("<b>ɴᴇᴇᴅ ᴛᴏ ʙᴇ ᴀᴅᴍɪɴ ᴛᴏ ᴜꜱᴇ ᴛʜɪꜱ ✅.</b>", show_alert=True)
     settings = await get_settings(int(grp_id))
     suffix = "" if shortner_num == "1" else f"_{'two' if shortner_num == '2' else 'three'}"
-    current_url = settings.get(f'shortner{suffix}', "ʏᴏᴜ ᴅɪᴅɴ'ᴛ ꜱᴇᴛ ᴀɴᴅ ᴠᴀʟᴜᴇ ꜱᴏ ᴜꜱɪɴɢ ᴅᴇꜰᴀᴜʟᴛ ᴠᴀʟᴜᴇꜱ")
-    current_api = settings.get(f'api{suffix}', "ʏᴏᴜ ᴅɪᴅɴ'ᴛ ꜱᴇᴛ ᴀɴᴅ ᴠᴀʟᴜᴇ ꜱᴏ ᴜꜱɪɴɢ ᴅᴇꜰᴀᴜʟᴛ ᴠᴀʟᴜᴇꜱ")
+    
+    current_url = settings.get(f'shortner{suffix}')
+    current_api = settings.get(f'api{suffix}')
+    
+    # Safe handling of empty values to prevent EntityBoundsInvalid error
+    url_text = f"<code>{current_url}</code>" if current_url else "ɴᴏᴛ ꜱᴇᴛ"
+    api_text = f"<code>{current_api}</code>" if current_api else "ɴᴏᴛ ꜱᴇᴛ"
 
     # Set query.data for back handling
     query.data = f'shortner_menu#{shortner_num}#{grp_id}'
 
     try:
-        await query.message.edit(f"<b>📌 ᴅᴇᴛᴀɪʟꜱ ᴏꜰ ꜱʜᴏʀᴛɴᴇʀ {shortner_num}:\n🌐 ᴡᴇʙꜱɪᴛᴇ: <code>{current_url}</code>\n🔗 ᴀᴘɪ: <code>{current_api}</code></b>")
+        await query.message.edit(f"<b>📌 ᴅᴇᴛᴀɪʟꜱ ᴏꜰ ꜱʜᴏʀᴛɴᴇʀ {shortner_num}:\n🌐 ᴡᴇʙꜱɪᴛᴇ: {url_text}\n🔗 ᴀᴘɪ: {api_text}</b>")
     except FloodWait as e:
         await asyncio.sleep(e.value)
-        await query.message.edit(f"<b>📌 ᴅᴇᴛᴀɪʟꜱ ᴏꜰ ꜱʜᴏʀᴛɴᴇʀ {shortner_num}:\n🌐 ᴡᴇʙꜱɪᴛᴇ: <code>{current_url}</code>\n🔗 ᴀᴘɪ: <code>{current_api}</code></b>")
+        await query.message.edit(f"<b>📌 ᴅᴇᴛᴀɪʟꜱ ᴏꜰ ꜱʜᴏʀᴛɴᴇʀ {shortner_num}:\n🌐 ᴡᴇʙꜱɪᴛᴇ: {url_text}\n🔗 ᴀᴘɪ: {api_text}</b>")
     except MessageNotModified:
         pass
 
