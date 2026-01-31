@@ -1,5 +1,5 @@
 from pyrogram.errors import InputUserDeactivated, UserNotParticipant, FloodWait, UserIsBlocked, PeerIdInvalid, MessageNotModified
-from info import  *
+from info import *
 from imdb import Cinemagoer 
 import asyncio
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
@@ -294,27 +294,97 @@ async def get_best_visual(tmdb_data: Dict) -> Optional[str]:
     if backdrops.get("all") and backdrops["all"]:
         return backdrops["all"][0]["url"]
     return None
-    
+
+# ====================================================================
+# [FIX] UPDATED SHORTENER LOGIC TO USE ENV VARIABLES AS FALLBACK
+# ====================================================================
+
 async def get_shortlink(link, grp_id, is_second_shortener=False, is_third_shortener=False):
     settings = await get_settings(grp_id)
-    if is_third_shortener:             
-        api, site = settings['api_three'], settings['shortner_three']
+    
+    api = None
+    site = None
+
+    # Logic: First try Database Settings, IF NOT found, Use Info.py Variables
+    if is_third_shortener:
+        api = settings.get('api_three') or SHORTENER_API3
+        site = settings.get('shortner_three') or SHORTENER_WEBSITE3
+    elif is_second_shortener:
+        api = settings.get('api_two') or SHORTENER_API2
+        site = settings.get('shortner_two') or SHORTENER_WEBSITE2
     else:
-        if is_second_shortener:
-            api, site = settings['api_two'], settings['shortner_two']
-        else:
-            api, site = settings['api'], settings['shortner']
+        api = settings.get('api') or SHORTENER_API
+        site = settings.get('shortner') or SHORTENER_WEBSITE
+    
+    # Fallback to defaults if specific ones are empty but primary is present
+    if not api:
+        api = SHORTENER_API
+    if not site:
+        site = SHORTENER_WEBSITE
+
+    if not api or not site:
+        LOGGER.error(f"Shortener Error: API or Website not provided for Group {grp_id}")
+        return link 
+
     shortzy = Shortzy(api, site)
     try:
         link = await shortzy.convert(link)
     except Exception as e:
-        link = await shortzy.get_quick_link(link)
+        LOGGER.error(f"Shortener Conversion Error: {e}")
+        try:
+            link = await shortzy.get_quick_link(link)
+        except Exception as e2:
+             LOGGER.error(f"Quick Link Error: {e2}")
+    
     return link
+
+# ====================================================================
+# [FIX] ADDED MISSING VERIFICATION FUNCTIONS
+# ====================================================================
+
+async def get_verify_status(user_id):
+    if user_id in temp.VERIFICATIONS:
+        return temp.VERIFICATIONS[user_id]
+    
+    verify = await db.get_verify_status(user_id)
+    return verify
+
+async def update_verify_status(user_id, verify_time, link):
+    current = await get_verify_status(user_id)
+    current.update({"verify_token": verify_time, "link": link})
+    temp.VERIFICATIONS[user_id] = current
+    await db.update_verify_status(user_id, current)
+
+async def check_verification(user_id):
+    if not IS_VERIFY:
+        return True, None, None
+
+    verify_status = await get_verify_status(user_id)
+    
+    # Defaults
+    verify_token = verify_status.get("verify_token", "")
+    verified_link = verify_status.get("link", "")
+    
+    if not verify_token:
+        return False, None, None
+        
+    try:
+        # Assuming verify_token stores the expiry time or verified date
+        # If it's just a date string, we need to compare
+        if datetime.now() < datetime.fromtimestamp(float(verify_token)):
+             return True, verify_token, verified_link
+    except:
+        # If token is invalid or parsing fails
+        pass
+        
+    return False, verify_token, verified_link
 
 async def get_settings(group_id):
     settings = temp.SETTINGS.get(group_id)
     if not settings:
         settings = await db.get_settings(group_id)
+        if not settings:
+            settings = {} # Return empty dict to prevent errors
         temp.SETTINGS.update({group_id: settings})
     return settings
     
