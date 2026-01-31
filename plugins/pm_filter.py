@@ -456,6 +456,34 @@ async def cb_handler(client: Client, query: CallbackQuery):
         user = query.message.reply_to_message.from_user.id
         if int(user) != 0 and query.from_user.id != int(user):
             return await query.answer(script.ALRT_TXT.format(query.from_user.first_name), show_alert=True)
+            
+        # ====================================================================
+        # [FIX] Added Verification Logic Before Generating Link
+        # ====================================================================
+        
+        # Check Verification Status
+        settings = await get_settings(query.message.chat.id)
+        if settings.get("is_verify", IS_VERIFY) and not await is_check_admin(client, query.message.chat.id, query.from_user.id):
+             is_verified, verify_token, link = await check_verification(query.from_user.id)
+             if not is_verified:
+                 if not link:
+                      # If link is None, generate it (handling rare cases)
+                      verify_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=7))
+                      await update_verify_status(query.from_user.id, verify_id, "")
+                      link = await get_shortlink(f"https://t.me/{temp.U_NAME}?start=verify_{verify_id}", query.message.chat.id)
+                      await update_verify_status(query.from_user.id, verify_id, link)
+                 
+                 btn = [[
+                     InlineKeyboardButton("Verify Now 🟢", url=link),
+                     InlineKeyboardButton("How To Verify 🟡", url=TUTORIAL)
+                 ]]
+                 return await query.message.reply_text(
+                     text=f"<b>⚠️ You are not verified!\n\nPlease verify yourself first to access the files. Verification expires in {get_readable_time(TWO_VERIFY_GAP)}.</b>",
+                     reply_markup=InlineKeyboardMarkup(btn),
+                     protect_content=True
+                 )
+
+        # If verified or admin, send the file link
         await query.answer(url=f"https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file_id}")          
                             
     elif query.data.startswith("sendfiles"):
