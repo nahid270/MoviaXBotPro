@@ -46,8 +46,7 @@ DATABASE_URI = environ.get('DATABASE_URI', "mongodb+srv://hahema9427:hahema9427@
 DATABASE_NAME = environ.get('DATABASE_NAME', "Cluster0")
 COLLECTION_NAME = environ.get('COLLECTION_NAME', 'SilentXBotz_files')
 
-# If MULTIPLE_DB Is True Then Fill DATABASE_URI2 Value Else You Will Get Error.
-MULTIPLE_DB = is_enabled(os.environ.get('MULTIPLE_DB', "True"), True) # Type True For Turn On MULTIPLE DB FUNTION 
+MULTIPLE_DB = is_enabled(os.environ.get('MULTIPLE_DB', "True"), True) 
 DATABASE_URI2 = environ.get('DATABASE_URI2', "mongodb+srv://MoviaXBot270:MoviaXBot270@cluster0.kbkpgt6.mongodb.net/?appName=Cluster0")
 DB_CHANGE_LIMIT = int(environ.get('DB_CHANGE_LIMIT', "432")) 
 
@@ -56,7 +55,7 @@ CHNL_LNK = environ.get('CHNL_LNK', 'https://t.me/TGLinkBase')
 OWNER_LNK = environ.get('OWNER_LNK', 'https://t.me/RequestContentGroup')
 UPDATE_CHANNEL_LNK = environ.get('UPDATE_CHANNEL_LNK', 'https://t.me/TGLinkBase')
 
-AUTH_CHANNEL = environ.get("AUTH_CHANNEL", "-1003356899562") # add multiple channels here, separated by single space
+AUTH_CHANNEL = environ.get("AUTH_CHANNEL", "-1003356899562") 
 AUTH_REQ_CHANNEL = environ.get('AUTH_REQ_CHANNEL', '-1003586737087')
 
 IS_VERIFY = is_enabled('IS_VERIFY', True)
@@ -92,7 +91,10 @@ IMDB = is_enabled((environ.get('IMDB', "False")), False)
 AUTO_FFILTER = is_enabled((environ.get('AUTO_FFILTER', "True")), True)
 AUTO_DELETE = is_enabled((environ.get('AUTO_DELETE', "True")), True)
 AUTO_DELETE_TIME = int(environ.get("AUTO_DELETE_TIME", "300"))  
-LINK_MODE = is_enabled((environ.get('LINK_MODE', "True")), True)
+
+# UPDATED: Changed LINK_MODE to BUTTON_MODE as per your request
+BUTTON_MODE = is_enabled((environ.get('BUTTON_MODE', "True")), True)
+
 IS_LANDSCAPE_POSTER = is_enabled((environ.get('IS_LANDSCAPE_POSTER', "True")), True)
 CUSTOM_FILE_CAPTION = environ.get("CUSTOM_FILE_CAPTION", f"{script.CAPTION}")
 BATCH_FILE_CAPTION = environ.get("BATCH_FILE_CAPTION", CUSTOM_FILE_CAPTION)
@@ -110,19 +112,16 @@ PAID_STREAM = bool(environ.get('PAID_STREAM', True))
 STREAM_MODE = bool(environ.get('STREAM_MODE', True))
 MAINTENANCE_MODE = bool(environ.get('MAINTENANCE_MODE', False)) 
 
-
-IGNORE_WORDS = (list(os.environ.get("IGNORE_WORDS").split(",")) if os.environ.get("IGNORE_WORDS") else []) #Remove Words While Searching Files
 IGNORE_WORDS = ["movies", "Movies", ",", "episode", "Episode", "episodes", "Episodes", "south indian", "south indian movie", "South Indian Movie", "south movie", "South Movie", "South Indian", "web-series", "hindi me bhejo", "gujrati", "combined", "!", "kro", "jaldi", "Audio", "audio", "movi", "language", "Language", "Hollywood", "All", "all", "bollywood", "Bollywood", "South", "south", "HD", "hd", "karo", "Karo", "fullepisode", "please", "plz", "Please", "Plz", "send", "link", "Link", "full", "Full", "dabbed", "dubbed", "season", "Season", "web", "series", "Web", "Series", "webseries", "WebSeries", "upload", "HD", "Hd", "bhejo", "ful", "Send", "Bhejo"]
+BAD_WORDS = ["Hdhub4u", "cinevood", "skymoviedHD"] 
 
-BAD_WORDS = ["Hdhub4u", "cinevood", "skymoviedHD"] #Remove Words From File_Name
-
-# Languages Updated (Bengali & Bangla Added)
+# Languages Kept Original (Bengali & Bangla Included)
 LANGUAGES = ["malayalam", "", "tamil", "", "english", "", "hindi", "", "telugu", "", "kannada", "", "gujarati", "", "marathi", "", "punjabi", "", "bengali", "", "bangla", ""]
 
 QUALITIES = ["360P", "", "480P", "", "720P", "", "1080P", "", "1440P", "", "2160P", ""]
 SEASONS = ["Season 1", "Season 2", "Season 3", "Season 4", "Season 5", "Season 6", "Season 7", "Season 8", "Season 9", "Season 10"]
 
-
+# ... (বাকি কোড আপনার প্রথম কোডের মতোই রাখা হয়েছে যাতে কোনো এরর না আসে)
 NO_PORT = bool(environ.get('NO_PORT', False))
 APP_NAME = None
 if 'DYNO' in environ:
@@ -138,7 +137,8 @@ WORKERS = int(environ.get('WORKERS', '4'))
 SESSION_NAME = str(environ.get('SESSION_NAME', 'SilentXBotz'))
 MULTI_CLIENT = False
 name = str(environ.get('name', 'SilentX'))
-PING_INTERVAL = int(environ.get("PING_INTERVAL", "1200"))  # 20 minutes
+PING_INTERVAL = int(environ.get("PING_INTERVAL", "1200")) 
+
 if 'DYNO' in environ:
     ON_HEROKU = True
     APP_NAME = str(getenv('APP_NAME'))
@@ -149,7 +149,6 @@ if HAS_SSL:
     URL = "https://{}/".format(FQDN)
 else:
     URL = "http://{}/".format(FQDN)
-
 
 REACTIONS = ["🤝", "😇", "🤗", "😍", "👍", "🎅", "😐", "🥰", "🤩", "😱", "🤣", "😘", "👏", "😛", "😈", "🎉", "⚡️", "🫡", "🤓", "😎", "🏆", "🔥", "🤭", "🌚", "🆒", "👻", "😁"]
 
@@ -176,8 +175,6 @@ Bot_cmds = {
     "pm_search": "ᴘᴍ sᴇᴀʀᴄʜ ᴏɴ ᴏғғ ᴀᴄᴄᴏʀᴅɪɴɢ ʏᴏᴜʀ ɴᴇᴇᴅᴇᴅ...",
     "restart": "ʀᴇꜱᴛᴀʀᴛ ᴛʜᴇ ʙᴏᴛ."
 }
-
-#Don't Change Anything Here
 
 if MULTIPLE_DB == False:
     DATABASE_URI = DATABASE_URI
