@@ -60,7 +60,7 @@ AUTH_REQ_CHANNEL = environ.get('AUTH_REQ_CHANNEL', '-1003586737087')
 
 IS_VERIFY = is_enabled('IS_VERIFY', True)
 LOG_VR_CHANNEL = int(environ.get('LOG_VR_CHANNEL', '-1003889628520'))
-LOG_API_CHANNEL = int(environ.get('LOG_API_CHANNEL', '-1003889628520'))
+LOG_API_CHANNEL = int(environ.get('LOG_API_CHANNEL', '-1003732302355'))
 VERIFY_IMG = environ.get("VERIFY_IMG", "https://telegra.ph/file/9ecc5d6e4df5b83424896.jpg")
 
 TUTORIAL = environ.get("TUTORIAL", "https://t.me/HowtoDowlnoad/36")
